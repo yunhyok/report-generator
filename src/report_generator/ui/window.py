@@ -4,11 +4,11 @@ import html
 import json
 import shutil
 import tempfile
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QKeySequence, QPixmap
+from PySide6.QtCore import QSignalBlocker, Qt, QUrl
+from PySide6.QtGui import QAction, QDesktopServices, QIcon, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"SPD Report Generator {__version__}")
+        self.setWindowIcon(QIcon(str(Path(__file__).resolve().parents[1] / "assets" / "app.ico")))
         available = QApplication.primaryScreen().availableGeometry()
         self.resize(min(1280, available.width()-40), min(850, available.height()-60))
         self.setMinimumSize(720, 460)
@@ -303,25 +304,27 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.error(exc)
 
-    def collect_config(self):
-        self.config.settings = ReportSettings(self.title_input.text().strip(), self.product_input.text().strip(), self.board_type.currentText(), self.date_input.text().strip(), self.revision_input.text().strip(), self.mirror.isChecked(), [n.strip() for n in self.ground_input.text().split(",") if n.strip()])
+    def collect_config(self, *, dcr=None):
+        config = self.config if dcr is None else replace(self.config, dcr=dcr)
+        config.settings = ReportSettings(self.title_input.text().strip(), self.product_input.text().strip(), self.board_type.currentText(), self.date_input.text().strip(), self.revision_input.text().strip(), self.mirror.isChecked(), [n.strip() for n in self.ground_input.text().split(",") if n.strip()])
         rows = []
         for row in range(self.mapping_table.rowCount()):
             text = lambda col: self.mapping_table.item(row, col).text().strip()
             checked = lambda col: self.mapping_table.item(row, col).checkState() == Qt.CheckState.Checked
             rows.append(ChannelMapping(int(text(3)) if text(3) else None, text(4), text(5), text(6), text(7), text(8), checked(0), checked(1), text(9), text(10), text(11), checked(2)))
-        self.config.mappings = rows
-        self.config.dcr = []
-        for row in range(self.dcr_table.rowCount()):
-            values = [self.dcr_table.item(row, col).text().strip() if self.dcr_table.item(row, col) else "" for col in range(3)]
-            if not any(values):
-                continue
-            try:
-                self.config.dcr.append(DcrRow(values[0], values[1], float(values[2].replace(",", ""))))
-            except ValueError as exc:
-                raise ValueError(f"DCR {row+1}행 값을 확인하세요.") from exc
-        validate_config(self.config)
-        return self.config
+        config.mappings = rows
+        if dcr is None:
+            config.dcr = []
+            for row in range(self.dcr_table.rowCount()):
+                values = [self.dcr_table.item(row, col).text().strip() if self.dcr_table.item(row, col) else "" for col in range(3)]
+                if not any(values):
+                    continue
+                try:
+                    config.dcr.append(DcrRow(values[0], values[1], float(values[2].replace(",", ""))))
+                except ValueError as exc:
+                    raise ValueError(f"DCR {row+1}행 값을 확인하세요.") from exc
+        validate_config(config)
+        return config
 
     def fill_mappings(self):
         self.loading_table = True
@@ -336,16 +339,33 @@ class MainWindow(QMainWindow):
         self.filter_mapping()
 
     def mapping_edited(self, item):
-        if self.loading_table or item.column() < 5 or item.column() == 11:
+        if self.loading_table:
+            return
+        if item.column() == 2:
+            row = item.row()
+            name = self.mapping_table.item(row, 5).text().strip()
+            if item.checkState() == Qt.CheckState.Checked and self.spd and name and not any(p.name == name for p in self.spd.ports):
+                with QSignalBlocker(self.mapping_table):
+                    item.setCheckState(Qt.CheckState.Unchecked)
+                self.mapping_table.item(row, 11).setText("SPD 포트를 찾을 수 없습니다. 전체 이름을 다시 입력하세요.")
+            else:
+                self.mapping_table.item(row, 11).setText("사용자 확인" if item.checkState() == Qt.CheckState.Checked else "연결 확인 필요")
+            return
+        if item.column() not in (5, 6, 7, 8):
             return
         self.loading_table = True
         row = item.row()
+        message = "연결이 바뀌었습니다. Net·사이트·채널을 검토하고 확인을 체크하세요."
         if item.column() == 5 and self.spd:
-            port = next((p for p in self.spd.ports if p.name == item.text()), None)
+            name = item.text().strip()
+            port = next((p for p in self.spd.ports if p.name == name), None)
             if port:
                 self.mapping_table.item(row, 6).setText(port.net)
-        self.mapping_table.item(row, 2).setCheckState(Qt.CheckState.Checked)
-        self.mapping_table.item(row, 11).setText("수동 확인")
+            elif name:
+                self.mapping_table.item(row, 6).setText("")
+                message = "SPD 포트를 찾을 수 없습니다. 전체 이름을 다시 입력하세요."
+        self.mapping_table.item(row, 2).setCheckState(Qt.CheckState.Unchecked)
+        self.mapping_table.item(row, 11).setText(message)
         self.loading_table = False
 
     def filter_mapping(self):
@@ -362,7 +382,7 @@ class MainWindow(QMainWindow):
         for row in rows:
             if not self.mapping_table.isRowHidden(row):
                 self.mapping_table.item(row, column).setCheckState(Qt.CheckState.Checked if state else Qt.CheckState.Unchecked)
-                if column == 2:
+                if column == 2 and self.mapping_table.item(row, column).checkState() == Qt.CheckState.Checked:
                     self.mapping_table.item(row, 11).setText("사용자 확인")
 
     def apply_group(self):
@@ -386,7 +406,8 @@ class MainWindow(QMainWindow):
     def fill_caps(self):
         from ..core.capacitance import format_capacitance
         self.loading_table = True
-        models = list(self.spd.models.values()) if self.spd else []
+        cap_models = {c.model_name for c in self.spd.components if c.is_cap} if self.spd else set()
+        models = [model for name, model in self.spd.models.items() if name in cap_models] if self.spd else []
         self.model_table.setRowCount(len(models))
         for row, model in enumerate(models):
             values = (model.name, format_capacitance(model.name_capacitance_f) if model.name_capacitance_f is not None else "미확인", format_capacitance(model.comment_capacitance_f) if model.comment_capacitance_f is not None else "미확인", format_capacitance(self.config.model_overrides[model.name]) if model.name in self.config.model_overrides else "", ("충돌 · " if model.conflict else "") + (model.evidence if model.valid else "빈 모델 / 미지정"))
@@ -413,7 +434,7 @@ class MainWindow(QMainWindow):
 
     def update_cap_override(self, table, item, expected_column, overrides):
         if self.loading_table or item.column() != expected_column:
-            return
+            return False
         from ..core.capacitance import parse_capacitance
         key = table.item(item.row(), 0).text()
         try:
@@ -424,9 +445,11 @@ class MainWindow(QMainWindow):
                 overrides[key] = value
             else:
                 overrides.pop(key, None)
+            return True
         except ValueError as exc:
             self.error(exc)
             self.fill_caps()
+            return False
 
     def model_edited(self, item):
         self.update_cap_override(self.model_table, item, 3, self.config.model_overrides)
@@ -434,7 +457,15 @@ class MainWindow(QMainWindow):
             self.fill_components()
 
     def component_edited(self, item):
-        self.update_cap_override(self.component_table, item, 5, self.config.component_overrides)
+        if not self.update_cap_override(self.component_table, item, 5, self.config.component_overrides):
+            return
+        from ..core.capacitance import format_capacitance, resolved_capacitance
+        row = item.row()
+        refdes = self.component_table.item(row, 0).text()
+        component = next(c for c in self.spd.components if c.refdes == refdes)
+        value = resolved_capacitance(component, self.spd, self.config)
+        with QSignalBlocker(self.component_table):
+            self.component_table.item(row, 4).setText(format_capacitance(value) if value is not None else "미확인")
 
     def fill_dcr(self):
         self.dcr_table.setRowCount(len(self.config.dcr))
@@ -453,8 +484,10 @@ class MainWindow(QMainWindow):
             self.dcr_table.removeRow(row)
 
     def confirm_dcr(self, values):
-        config = self.collect_config()
+        config = self.collect_config(dcr=[])
         rows = assign_column(values, config.mappings, "site" if self.dcr_order.currentIndex() == 0 else "channel")
+        config.dcr = rows
+        validate_config(config)
         dialog = QDialog(self)
         dialog.setWindowTitle("DCR 대상과 순서 확인")
         dialog.resize(650, 500)
@@ -471,7 +504,7 @@ class MainWindow(QMainWindow):
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.config.dcr = rows
+            self.config = config
             self.fill_dcr()
             return True
         return False
@@ -512,7 +545,7 @@ class MainWindow(QMainWindow):
             config = self.collect_config()
             from ..core.mapping import validate_mappings
             if any(m.selected for m in config.mappings):
-                validate_mappings(config, self.ts)
+                validate_mappings(config, self.ts, self.spd)
             self.action = action
             self.runner.start(action, {"config": config, "spd": self.spd, "ts": self.ts, "path": path, "folder": self.temp.name})
         except Exception as exc:
@@ -550,6 +583,7 @@ class MainWindow(QMainWindow):
     def on_finished(self, result):
         self.progress.setValue(100)
         if self.action == "load":
+            self.clear_preview()
             self.loaded_paths = {"spd": self.spd_path.text().strip(), "touchstone": self.ts_path.text().strip()}
             before = [(v.path, v.signature) if v else None for v in (self.spd, self.ts)]
             self.spd, self.ts, mappings, errors = result
@@ -619,6 +653,14 @@ class MainWindow(QMainWindow):
                 book.close()
             self.preview_tabs.setCurrentIndex(1)
 
+    def clear_preview(self):
+        self.preview_book = None
+        self.preview_images = []
+        self.preview_selector.clear()
+        self.preview_image.clear()
+        self.preview_table.clear()
+        self.page_summary.setText("입력과 연결을 확인한 뒤 미리보기를 갱신하세요.")
+
     def save_image(self):
         data = self.preview_selector.currentData()
         if not data or data[0] != "image":
@@ -683,6 +725,7 @@ class MainWindow(QMainWindow):
             return
         try:
             config, sources, _, changed = load_project(path)
+            self.clear_preview()
             self.config = config
             self.project_path = path
             self.apply_settings()
@@ -722,10 +765,7 @@ class MainWindow(QMainWindow):
         self.fill_mappings()
         self.fill_caps()
         self.fill_dcr()
-        self.preview_selector.clear()
-        self.preview_image.clear()
-        self.preview_table.clear()
-        self.page_summary.setText("입력과 연결을 확인한 뒤 미리보기를 갱신하세요.")
+        self.clear_preview()
         self.log.clear()
         self.tabs.setCurrentIndex(0)
         self.saved_state = self.state_text()

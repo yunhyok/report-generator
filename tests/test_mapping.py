@@ -78,3 +78,17 @@ def test_normalizes_site_prefix_suffix_and_instance_without_changing_raw_names()
 
 def test_accepts_dcr_only_without_port_mappings():
     validate_mappings(ReportConfig(dcr=[DcrRow("SITE0", "RAIL_A", 1.0)]))
+
+
+def test_checks_selected_spd_port_even_after_manual_confirmation():
+    spd = SpdData("synthetic.spd", {}, ports=[Port(1, "P1", net="RAIL_A")])
+    row = ChannelMapping(spd_port="TYPO", net="RAIL_A", site="SITE0", channel="RAIL_A", confirmed=True)
+    with pytest.raises(ValueError, match="SPD 포트"):
+        validate_mappings([row], spd=spd)
+    row.spd_port = "P1"
+    validate_mappings([row], spd=spd)
+    row.spd_port = ""
+    validate_mappings([row], spd=spd)  # Manually mapped CAP nets need no port.
+    row.spd_port = "TYPO"
+    row.selected = False
+    validate_mappings(ReportConfig(mappings=[row], dcr=[DcrRow("SITE0", "RAIL_A", 1.0)]), spd=spd)

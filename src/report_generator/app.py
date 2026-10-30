@@ -11,6 +11,9 @@ def main():
     os.environ["OPENBLAS_NUM_THREADS"] = "1"
     os.environ["MKL_NUM_THREADS"] = "1"
     os.environ["OMP_NUM_THREADS"] = "1"
+    if "--validate-project" in sys.argv[1:]:
+        from report_generator.validation import main as validate
+        return validate(sys.argv[1:])
     if len(sys.argv) == 3 and sys.argv[1] == "--self-test":
         from report_generator.selftest import run
         return run(sys.argv[2])

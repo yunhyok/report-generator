@@ -26,17 +26,25 @@ def test_units_spots_formula_metrics_and_same_chart_source(tmp_path):
     assert result.sheets == ["PI ALL@100MHz", "PI ALL", "VDD"]
     w = openpyxl.load_workbook(result.path)
     assert w["PI ALL"]["E5"].value == pytest.approx(2**.5)
-    assert w["PI ALL@100MHz"]["F5"].value == pytest.approx(2**.5)
-    assert w["PI ALL@100MHz"]["C5"].value == pytest.approx(2 * 2**.5)
-    assert w["PI ALL@100MHz"]["D5"].value == pytest.approx(1.5 * 2**.5)
-    assert w["PI ALL@100MHz"]["E5"].value == pytest.approx(1 / 3)
-    assert w["PI ALL@100MHz"]["E5"].number_format == "0.0%"
+    assert w["PI ALL@100MHz"]["D5"].value == pytest.approx(2**.5)
+    assert w["PI ALL@100MHz"]["G5"].value == pytest.approx(2 * 2**.5)
+    assert w["PI ALL@100MHz"]["H5"].value == pytest.approx(1.5 * 2**.5)
+    assert w["PI ALL@100MHz"]["F5"].value == pytest.approx(1 / 3)
+    assert w["PI ALL@100MHz"]["F5"].number_format == "0.0%"
     assert w["VDD"]["S5"].value == pytest.approx(2**.5)
     assert w["VDD"]._images[0].anchor._from.col == 1
     assert w["VDD"]._images[0].anchor._from.row == 3
     assert not w["PI ALL"].sheet_view.showGridLines
-    assert w["PI ALL"]["B4"].font.name == "Malgun Gothic"
-    assert w["PI ALL"]["B1"].font.sz == 24
+    assert w["PI ALL"]["B4"].font.name == "맑은 고딕"
+    assert w["PI ALL"]["A1"].font.sz == 24
+    assert w["PI ALL"]["A1"].value == "Power Impedance"
+    assert w["PI ALL"]["H5"].font.bold
+    assert not w["PI ALL"]["G5"].font.bold
+    for sheet in w:
+        assert sheet.freeze_panes is None
+        assert len(sheet.sheet_view.selection) == 1
+        assert sheet.sheet_view.selection[0].pane is None
+        assert sheet.sheet_view.selection[0].activeCell == "B4"
     with zipfile.ZipFile(result.path) as z:
         assert len([n for n in z.namelist() if n.startswith("xl/media/")]) == 1
         assert not any(n.startswith("xl/charts/") for n in z.namelist())
@@ -50,12 +58,15 @@ def test_units_spots_formula_metrics_and_same_chart_source(tmp_path):
 
 def test_dcr_only_and_literal_formula_strings(tmp_path):
     config = ReportConfig(dcr=[DcrRow("0", "=SUM(1,2)", 12.5)])
-    result = build_report(config, None, None, tmp_path / "dcr.xlsx")
+    spd = SpdData("synthetic.spd", {}, warnings=["Board outline unavailable."])
+    result = build_report(config, spd, None, tmp_path / "dcr.xlsx")
     assert result.sheets == ["DCR"]
     w = openpyxl.load_workbook(result.path)
-    assert w["DCR"]["B5"].data_type == "s"
-    assert w["DCR"]["B5"].value == "=SUM(1,2)"
-    assert w["DCR"]["C5"].value == 12.5
+    assert w["DCR"]["C5"].data_type == "s"
+    assert w["DCR"]["C5"].value == "=SUM(1,2)"
+    assert w["DCR"]["D5"].value == 12.5
+    assert not any(isinstance(c.value, str) and c.value.startswith("주의:") for row in w["DCR"] for c in row)
+    assert result.warnings == spd.warnings
     w.close()
 
 
@@ -72,8 +83,8 @@ def test_partial_and_summary_flags_and_safe_unique_names(tmp_path):
     result = build_report(config, None, ts, tmp_path / "summary.xlsx")
     assert result.sheets == ["PI ALL@100MHz", "PI ALL"]
     w = openpyxl.load_workbook(result.path)
-    assert w["PI ALL"]["C5"].value == "0"
-    assert w["PI ALL"]["B6"].value is None
+    assert w["PI ALL"]["D5"].value == 0
+    assert w["PI ALL"]["C6"].value is None
     w.close()
 
 
@@ -99,15 +110,21 @@ def test_caps_active_override_and_placement(tmp_path):
         components=[Component("C1", "cap", ["VDD_0", "GND"], x_mm=1, y_mm=2,
                               width_mm=1, height_mm=.5, is_cap=True),
                     Component("C2", "cap", ["VDD_0", "GND"], status="Disabled", is_cap=True),
-                    Component("C3", "NULL", ["VDD_0", "GND"], status="Enabled", is_cap=True)])
+                    Component("C3", "NULL", ["VDD_0", "GND"], status="Enabled", is_cap=True)],
+        warnings=["Board outline unavailable.", "보드 외곽선 정보가 없습니다.", "Model nominal requires review."])
     result = build_report(config, spd, None, tmp_path / "caps.xlsx")
     assert result.sheets == ["CAP_수량", "CAP_배치도면"]
     w = openpyxl.load_workbook(result.path)
-    assert w["CAP_수량"]["B4"].value == "Channel / 1uF"
-    assert w["CAP_수량"]["C5"].value == 1
-    assert w["CAP_수량"]["B8"].value == "Channel / Unknown"
-    assert w["CAP_수량"]["C9"].value == 1
+    assert w["CAP_수량"]["D4"].value == "1uF"
+    assert w["CAP_수량"]["D6"].value == 1
+    assert w["CAP_수량"]["D8"].value == "Unknown"
+    assert w["CAP_수량"]["D10"].value == 1
+    assert "C4:C5" in w["CAP_수량"].merged_cells
     assert len(w["CAP_배치도면"]._images) == 1
+    cap_notes = " ".join(str(c.value) for row in w["CAP_수량"] for c in row if c.value is not None)
+    assert "Model nominal requires review." in cap_notes and "Board outline unavailable." not in cap_notes
+    assert "외곽선" not in cap_notes
+    assert result.warnings == spd.warnings
     w.close()
 
 
@@ -201,13 +218,63 @@ def test_interpolated_values_are_numeric_and_marked_in_every_pi_table(tmp_path):
     workbook = openpyxl.load_workbook(result.path, data_only=True)
     try:
         summary = workbook["PI ALL@100MHz"]
-        assert summary["F5"].number_format == '0.000"*"'
-        assert isinstance(summary["F5"].value, float)
-        assert summary["C5"].number_format == "0.000"
+        assert summary["D5"].number_format == '0.000"*"'
+        assert isinstance(summary["D5"].value, float)
+        assert summary["G5"].number_format == "0.000_ "
         assert workbook["PI ALL"]["E5"].number_format == '0.000"*"'
         assert workbook["PI ALL"]["H5"].number_format == '0.000"*"'
-        assert workbook["PI ALL"]["I5"].number_format == "0.000"
+        assert workbook["PI ALL"]["I5"].number_format == "0.000_ "
         assert workbook["VDD"]["S5"].number_format == '0.000"*"'
-        assert workbook["VDD"]["W5"].number_format == "0.000"
+        assert workbook["VDD"]["W5"].number_format == "0.000_ "
     finally:
         workbook.close()
+
+
+def test_wide_reference_blocks_cap_headers_and_display_precision(tmp_path):
+    mappings = [ChannelMapping(index + 1, site=f"SITE{site}", channel=f"RAIL{channel}",
+                               net=f"N{index}", priority="7", group=f"RAIL{channel}" if channel < 2 else "")
+                for index, (channel, site) in enumerate((c, s) for c in range(5) for s in range(9))]
+    config = ReportConfig(mappings=mappings)
+    ts = TouchstoneData("synthetic.s45p", {}, [Port(i + 1, f"P{i + 1}") for i in range(45)],
+                        np.array(FREQUENCIES), np.full((5, 45), 1.123456 + 1j))
+    spd = SpdData("synthetic.spd", {}, models={"cap": SpiceModel("cap", 1e-7, valid=True)},
+                  components=[Component(f"C{i}", "cap", [f"N{i}", "GND"], is_cap=True) for i in range(45)])
+    result = build_report(config, spd, ts, tmp_path / "wide.xlsx")
+    book = openpyxl.load_workbook(result.path)
+    try:
+        pi = book["PI ALL"]
+        assert pi["B4"].value == "RAIL0 / [mΩ]"
+        assert pi["B4"].fill.fgColor.rgb == "00E2EFDA"
+        assert "B4:H4" in pi.merged_cells and "W4:AC4" in pi.merged_cells
+        assert "B17:H17" in pi.merged_cells
+        assert pi["B6"].value == 0
+        assert pi["C6"].value == pytest.approx(abs(1.123456 + 1j) * 1000)
+        assert pi["C6"].number_format == "0.0_ "
+        assert pi["F6"].font.bold and not pi["E6"].font.bold
+        assert book["PI ALL@100MHz"]["B5"].font.bold
+        assert book["RAIL1"]["P4"].fill.fgColor.rgb == "00D9E2F3"
+        assert book["RAIL1"]["R5"].number_format == "0.0_ "
+        caps = book["CAP_수량"]
+        assert "B4:B5" in caps.merged_cells and "C4:K4" in caps.merged_cells
+        assert caps["B6"].font.sz == 12 and caps["C6"].font.sz == 11
+        assert caps.row_dimensions[6].height == 17.25
+        assert all(sheet.freeze_panes is None for sheet in book)
+    finally:
+        book.close()
+
+
+def test_missing_site_and_channel_values_remain_visible(tmp_path):
+    config, ts = data()
+    config.mappings[1].channel = "UNAVAILABLE"
+    config.mappings[0].group = config.mappings[1].group = ""
+    ts.z_diagonal[:, 1] = complex(np.nan, np.nan)
+    result = build_report(config, None, ts, tmp_path / "missing.xlsx")
+    book = openpyxl.load_workbook(result.path)
+    try:
+        summary = book["PI ALL@100MHz"]
+        assert summary["E4"].value == "1"
+        assert summary["C6"].value == "UNAVAILABLE"
+        assert summary["E6"].value is None
+        assert book["PI ALL"]["C6"].value == "UNAVAILABLE"
+    finally:
+        book.close()

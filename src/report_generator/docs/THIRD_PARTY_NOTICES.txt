@@ -5,7 +5,7 @@ The application source is licensed under the MIT license in the accompanying
 LICENSE file. Third-party components retain their own copyrights and licenses.
 The installed application includes their complete license files in
 licenses/, and the exact build versions in BUILD_MANIFEST.json. The list below
-identifies the pinned v0.1.1 Windows build; additional notices inside the copied
+identifies the pinned v0.1.2 Windows build; additional notices inside the copied
 license files apply to bundled native libraries and fonts.
 
 Python 3.12.10 — Python Software Foundation License and incorporated notices.

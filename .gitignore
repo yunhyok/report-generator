@@ -15,5 +15,8 @@ outputs/
 *.npz
 *.log
 *.report.json
+*.validation.json
+*.validation.html
 *.png
+!src/report_generator/assets/app-icon.png
 *.zip

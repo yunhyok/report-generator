@@ -25,6 +25,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=no
 RestartApplications=no
 UninstallDisplayIcon={app}\{#AppExe}
+SetupIconFile=..\src\report_generator\assets\app.ico
 LicenseFile={#PayloadDir}\LICENSE
 OutputDir={#InstallerOutputDir}
 OutputBaseFilename=SPD-Report-Generator-v{#AppVersion}-Setup-x64

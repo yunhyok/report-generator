@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>SPD Report Generator 0.1.1 · 사용 설명서</title>
+<title>SPD Report Generator 0.1.2 · 사용 설명서</title>
 <style>
 :root{color-scheme:dark;--bg:#202226;--panel:#2b2e34;--inset:#1d2025;--text:#eceef1;--muted:#bdc5d0;--line:#626c7a;--accent:#8fc1ff}
 *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:1rem}body{margin:0;background:var(--bg);color:var(--text);font:18px/1.8 "Segoe UI","Malgun Gothic",sans-serif;word-break:keep-all;overflow-wrap:anywhere}a{color:var(--accent);text-underline-offset:.2em}a:focus-visible{outline:3px solid var(--accent);outline-offset:4px}header,main,footer{max-width:1180px;margin:auto;padding:2rem}header{padding-bottom:1rem}h1{font-size:clamp(1.9rem,4vw,2.65rem);line-height:1.3;margin:.5rem 0 1rem}h2{font-size:1.65rem;line-height:1.4;margin:0 0 1rem}h3{font-size:1.2rem;margin:1.5rem 0 .5rem}p{margin:.7rem 0}strong{color:#fff}small,.muted{color:var(--muted)}.eyebrow{color:var(--accent);font-weight:600;letter-spacing:.04em}.layout{display:grid;grid-template-columns:235px minmax(0,1fr);gap:1.75rem}nav{align-self:start;position:sticky;top:1rem;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:1rem;font-size:1rem}nav p{margin:0 0 .5rem;font-weight:700}nav a{display:block;padding:.35rem 0}section{background:var(--panel);border:1px solid #505761;border-radius:7px;padding:1.7rem;margin-bottom:1.5rem}ul,ol{padding-left:1.5rem}li{margin:.5rem 0}.callout{border-left:4px solid var(--accent);background:var(--inset);padding:.8rem 1rem;margin:1rem 0}.table-wrap{overflow-x:auto;margin:1rem 0}table{border-collapse:collapse;width:100%;font-size:1rem}th,td{text-align:left;vertical-align:top;border:1px solid var(--line);padding:.7rem .8rem}th{background:#353a42;font-weight:700}code,kbd{background:var(--inset);border:1px solid #505761;border-radius:3px;padding:.1rem .35rem;font: .95em/1.6 Consolas,"Malgun Gothic",monospace}pre{white-space:pre-wrap;background:var(--inset);padding:1rem;border:1px solid var(--line);border-radius:4px;overflow:auto}pre code{padding:0;border:0}.formula{font-family:Consolas,"Malgun Gothic",monospace;background:var(--inset);padding:1rem;overflow-x:auto;white-space:nowrap}.skip{position:absolute;left:1rem;top:-5rem;padding:.5rem;background:var(--panel)}.skip:focus{top:1rem}footer{padding-top:0;color:var(--muted);font-size:1rem}.top-link{font-size:1rem}
@@ -16,7 +16,7 @@
 <body id="top">
 <a class="skip" href="#quickstart">본문으로 건너뛰기</a>
 <header>
-<p class="eyebrow">SPD REPORT GENERATOR · v0.1.1</p>
+<p class="eyebrow">SPD REPORT GENERATOR · v0.1.2</p>
 <h1>입력 파일에서 Excel 보고서까지</h1>
 <p>SPD의 부품·모델·배치, Touchstone의 임피던스, 직접 입력한 DCR을 조합해 보고서를 만듭니다. <strong>파일 처리는 이 PC에서 이루어지며 클라우드 업로드나 계정 연결이 필요하지 않습니다.</strong></p>
 <p class="muted">프로그램에서 <b>Help → 사용 설명서</b> 또는 <kbd>F1</kbd>로 이 문서를 엽니다. 인터넷 없이 읽거나 브라우저의 인쇄 기능으로 저장할 수 있습니다.</p>
@@ -34,12 +34,13 @@
 <a href="#calculation">8. 계산식과 단위</a>
 <a href="#projects">9. 프로젝트 저장</a>
 <a href="#troubleshooting">10. 결과가 다를 때</a>
+<a href="#validation">11. 화면 없이 생성·검증</a>
 </nav>
 <div>
 <section id="quickstart">
 <h2>1. 처음 실행하기</h2>
 <ol>
-<li>Windows x64용 <code>SPD-Report-Generator-v0.1.1-Setup-x64.exe</code>를 실행해 설치합니다. 현재 사용자 계정에 설치되며 관리자 권한이나 별도의 Python 설치는 필요하지 않습니다. 바탕 화면 바로가지는 설치 중 선택할 수 있습니다.</li>
+<li>Windows x64용 <code>SPD-Report-Generator-v0.1.2-Setup-x64.exe</code>를 실행해 설치합니다. 현재 사용자 계정에 설치되며 관리자 권한이나 별도의 Python 설치는 필요하지 않습니다. 바탕 화면 바로가지는 설치 중 선택할 수 있습니다.</li>
 <li>시작 메뉴에서 <b>SPD Report Generator</b>를 엽니다. 같은 메뉴의 <b>Help</b>로 이 설명서를 바로 열 수 있습니다.</li>
 <li><b>1 입력</b>에서 필요한 SPD·Touchstone 파일을 고르고 <b>파일 읽기</b>를 누릅니다. 제목, 제품명, 보드 종류와 작성일 등을 입력합니다.</li>
 <li><b>2 채널·그룹</b>에서 사용할 행을 고르고 Net·사이트·채널·SPD 포트를 확인합니다. 모호한 연결을 해결한 뒤 <b>확인</b>에 체크합니다.</li>
@@ -57,7 +58,7 @@
 <div class="table-wrap"><table>
 <thead><tr><th scope="col">입력</th><th scope="col">사용하는 내용</th><th scope="col">확인할 점</th></tr></thead>
 <tbody>
-<tr><th scope="row">SPD</th><td>부품의 실제 모델 할당, Net, 활성 상태, 모델 주석의 명목 용량, 위치·회전·면·몸체 치수</td><td>부분 회로와 연결 정보가 있는 텍스트 SPD를 사용합니다. 원본을 수정하지 않고 읽습니다.</td></tr>
+<tr><th scope="row">SPD</th><td>부품의 실제 모델 할당, Net, 활성 상태, 모델 주석의 명목 용량, 위치·회전·면·몸체 치수와 연결된 표면 패드</td><td>부분 회로와 연결 정보가 있는 텍스트 SPD를 사용합니다. 원본을 수정하지 않고 읽습니다.</td></tr>
 <tr><th scope="row">Touchstone</th><td>다중 포트 S 행렬을 변환한 자기 임피던스 |Zii|</td><td>Touchstone <b>1.x, S 파라미터, RI·MA·DB</b>, 확장자 <code>.sNp</code>, 최대 <b>1024포트</b>를 지원합니다. 2.x 키워드·혼합 모드는 지원하지 않습니다.</td></tr>
 <tr><th scope="row">DCR</th><td>사이트·채널별 직류 저항 표</td><td>한 열 붙여넣기, <code>.xlsx</code> 범위 가져오기, 표 직접 입력이 가능합니다.</td></tr>
 </tbody></table></div>
@@ -89,6 +90,7 @@
 <li>필요한 행을 선택해 그룹명을 입력하고 <b>그룹 적용</b>을 누릅니다. 그룹명을 비워 적용하면 해당 상세 그래프에서 빠집니다.</li>
 </ol>
 <p>행을 고르는 것과 <b>사용</b> 체크는 별개입니다. 여러 행은 <kbd>Ctrl</kbd> 또는 <kbd>Shift</kbd>로 선택할 수 있습니다. <b>채널 추가</b>로 직접 행을 만들고 <b>선택 행 삭제</b>로 지울 수 있습니다. 같은 Touchstone 포트를 여러 행에서 사용하거나 사이트·채널을 중복 선택하면 출력 전에 수정해야 합니다.</p>
+<p>SPD 포트·Net·사이트·채널을 바꾸면 <b>확인</b> 체크가 해제됩니다. 연결을 다시 검토한 뒤 확인해 주세요. 그룹·Priority만 바꾸면 기존 확인 상태를 유지합니다. 입력한 SPD 포트가 원본에 없으면 확인과 출력을 막습니다.</p>
 </section>
 <section id="capacitors">
 <h2>4. CAP 용량과 활성 상태</h2>
@@ -102,6 +104,7 @@
 </ol>
 <p>예를 들어 이름은 <code>CAP_220N</code>인데 명목 주석은 <code>2.2[uF]</code>이면 두 근거와 충돌을 표시합니다. 자동값은 주석을 우선하며, 실제 의도를 확인한 뒤 <code>220 nF</code> 또는 <code>2.2 uF</code>처럼 수정합니다. 수정 칸을 비우면 그 단계의 수정값만 지워지고 다음 순서의 값이 적용됩니다.</p>
 <p><b>부품별 수정</b>은 검색 결과 중 최대 500개를 표시합니다. RefDes 또는 모델로 검색해 대상을 좁히세요.</p>
+<p><b>모델별 일괄 수정</b>에는 실제 CAP 부품에 할당된 모델만 표시합니다. 개별 용량을 수정하면 <b>현재 용량</b> 열에도 바로 반영됩니다. 보고서의 CAP 수량 표는 작은 용량부터 정렬하며 미확인 항목은 마지막에 표시합니다.</p>
 <h3>수량에 들어가는 부품</h3>
 <div class="table-wrap"><table>
 <thead><tr><th scope="col">상태</th><th scope="col">활성 CAP 집계</th></tr></thead>
@@ -131,12 +134,16 @@
 <thead><tr><th scope="col">선택 순서</th><th scope="col">값이 대응하는 대상</th></tr></thead>
 <tbody><tr><th scope="row">사이트 → 채널</th><td>SITE2/POWER_A → SITE2/POWER_B → SITE3/POWER_A → SITE3/POWER_B</td></tr><tr><th scope="row">채널 → 사이트</th><td>SITE2/POWER_A → SITE3/POWER_A → SITE2/POWER_B → SITE3/POWER_B</td></tr></tbody></table></div>
 <p>Excel 수식 셀은 저장된 계산 결과를 읽습니다. Excel에서 먼저 계산하고 저장하세요. 머리글이나 빈 칸은 범위에서 제외합니다.</p>
+<p>기존 DCR 표에 작성 중인 빈 행이 있어도 새 값을 가져올 수 있습니다. 대상 확인창에서 취소하면 기존 표를 그대로 유지합니다.</p>
 <h3>SPD·Touchstone 없이 DCR만 만들기</h3>
 <p><b>파일 읽기</b>를 생략하고 DCR의 <b>행 추가</b>로 사이트·채널·DCR(mΩ)을 직접 입력하면 됩니다. 같은 사이트·채널의 DCR은 하나만 둘 수 있습니다. 한 열 가져오기를 쓰려면 먼저 <b>채널 추가</b>로 대응할 사이트·채널을 만든 다음 위 절차를 따릅니다. <b>선택 행 삭제</b>는 선택한 DCR 행을 지웁니다.</p>
 </section>
 <section id="output">
 <h2>6. 미리보기와 Excel·PNG 저장</h2>
 <p><b>미리보기 갱신</b>은 현재 설정으로 표와 그림을 다시 만듭니다. 설정을 바꿨다면 다시 갱신하세요. 선택 목록에서 <b>그림 · …</b> 또는 <b>표 · …</b>를 고릅니다. 표 미리보기는 앞 40행·최대 40열이며, 전체 데이터는 저장한 Excel에서 확인합니다.</p>
+<p>새 입력을 읽거나 다른 프로젝트를 열면 이전 미리보기를 비웁니다. 현재 입력의 결과는 <b>미리보기 갱신</b>으로 다시 만드세요.</p>
+<p>Excel은 흰 셀 배경, 숨긴 격자선, 맑은 고딕과 얇은 검정 테두리를 사용합니다. 제목은 A1의 24pt 굵은 글씨, 본문은 B4부터 시작하며 <b>틀 고정은 사용하지 않습니다.</b> 표는 기본 11pt, CAP 채널명은 사이트가 많은 표에서 12pt입니다. 100MHz 수치는 PI 주파수 표에서 굵게 표시합니다.</p>
+<p>사이트가 8개 이하면 Priority·채널·사이트를 세로로 나열하고, 9개 이상인 PI 요약은 채널별 표를 가로로 최대 4개씩 배치합니다. Priority를 입력하거나 지워도 표 배치는 바뀌지 않습니다. CAP 수량은 용량별 제목과 사이트 행을 두 줄로 구성합니다.</p>
 <div class="table-wrap"><table>
 <thead><tr><th scope="col">페이지</th><th scope="col">생성 조건·내용</th></tr></thead>
 <tbody>
@@ -152,14 +159,15 @@
 </section>
 <section id="placement">
 <h2>7. 배치도 읽는 방법</h2>
-<p>배치도는 SPD의 부품 좌표·회전·면과 Part 몸체 치수를 사용합니다. 선택한 Net의 활성 CAP는 용량별 색으로, 비활성 CAP와 다른 부품은 회색 계열로 구분합니다. 미확인 용량은 별도 색을 사용하므로 그림의 범례를 함께 보세요.</p>
+<p>배치도는 <b>검정 배경</b>에 SPD의 실제 부품 좌표·회전·면과 Part 몸체 치수를 표시합니다. 선택한 Net의 활성 CAP는 용량별 색으로 채우고, 비활성 CAP와 다른 부품은 회색 계열 윤곽선으로 구분합니다. 미확인 용량은 별도 색을 사용하므로 그림의 범례를 함께 보세요. Excel 셀과 임피던스 그래프 배경은 흰색입니다.</p>
 <ul>
-<li>몸체 치수가 없으면 위치 마커로 표시합니다. 이름이나 패키지 숫자로 몸체 크기를 만들어 넣지 않습니다.</li>
+<li>몸체 치수가 없으면 실제 핀 범위를 사용하고, 핀 정보도 없으면 위치 마커로 표시합니다. 이름이나 패키지 숫자로 몸체 크기를 만들어 넣지 않습니다.</li>
+<li>부품에 연결된 Node와 PadStack의 표면 패드를 실제 좌표·회전으로 표시합니다. 원·정사각형·직사각형·다각형을 지원하며, 안티패드와 지원하지 않는 형상은 그리지 않습니다.</li>
 <li>좌표가 없는 부품은 그림에서 생략합니다. 이는 CAP 수량에서 빠진다는 뜻은 아닙니다.</li>
 <li>정확한 보드 외곽선이 없으면 부품 배치만 표시합니다. 동박 다각형이나 부품 범위를 실제 보드 경계로 단정하지 않습니다.</li>
 <li><b>1 입력 → Bottom 방향</b>의 체크를 켜면 Bottom을 하면에서 본 방향으로 좌우 반전합니다. 끄면 SPD 좌표 방향을 유지합니다. 도면 비교 시 같은 관찰 방향인지 확인하세요.</li>
 </ul>
-<p>배치도는 부품 위치를 설명하는 그림이며 전체 동박·배선·패드 형상을 재현하는 PCB CAD 뷰어는 아닙니다.</p>
+<p>부품과 연결된 표면 패드를 표시하는 배치도입니다. 전체 동박·배선·실크와 부품에 연결되지 않은 비아는 재현하지 않습니다. 따라서 원본 CAD 화면과 완전히 같은 그림은 아닙니다.</p>
 </section>
 <section id="calculation">
 <h2>8. 임피던스 계산과 보고서 단위</h2>
@@ -203,8 +211,23 @@
 <p>대상 Excel 파일이 다른 프로그램에서 열려 있는지, 폴더에 저장할 수 있는지 확인합니다. 입력 파일을 출력 경로로 선택하지 마세요. 입력과 연결을 수정했다면 미리보기를 다시 갱신한 뒤 저장하세요.</p>
 <p class="top-link"><a href="#top">문서 처음으로 ↑</a></p>
 </section>
+<section id="validation">
+<h2>11. 화면 입력 없이 생성하고 검증하기</h2>
+<p>저장해 둔 프로젝트로 보고서를 반복 생성할 때는 명령줄 검증 도구를 사용할 수 있습니다. <b>화면과 동일한 SPD·Touchstone 판독기, 매핑 검사, 계산식과 Excel 출력 코어</b>를 실행합니다. 마우스나 키보드 입력은 필요하지 않습니다.</p>
+<h3>설치한 프로그램에서 실행</h3>
+<p>PowerShell에서 다음 명령의 프로젝트·출력·참조 경로를 실제 파일 경로로 바꾸세요. 공백이 있는 경로는 따옴표로 감쌉니다.</p>
+<pre><code>&amp; "$env:LOCALAPPDATA\Programs\SPD Report Generator\SPD Report Generator.exe" `
+  --validate-project "D:\Work\example.report.json" `
+  --output "D:\Work\checked.xlsx" `
+  --reference "D:\Work\reference.xlsx"</code></pre>
+<p><code>--reference</code>는 선택 사항입니다. 참조 보고서가 없어도 계산 결과와 출력 셀을 대조합니다. 소스에서 실행하려면 같은 인자로 <code>python scripts/validate_reports.py</code>를 사용하세요.</p>
+<h3>결과 확인</h3>
+<p>Excel과 같은 폴더에 <code>checked.validation.html</code>, <code>checked.validation.json</code>이 생성됩니다. HTML을 열면 PI·100MHz·상세 표·CAP·DCR의 일치 수와 차이, 제외 페이지, 글꼴·채우기·틀 고정·그림 수를 확인할 수 있습니다. 입력 파일이 크면 완료까지 시간이 걸립니다.</p>
+<p>채널·사이트·주파수·용량을 기준으로 비교하므로 행 순서가 달라도 대응합니다. 참조와 값이 다르면 먼저 원본 Revision과 선택 단자·CAP 수정값을 확인하세요. <b>참조 숫자에 맞추어 계산값을 바꾸지는 않습니다.</b></p>
+<p>원본이 변경되거나 매핑 확인이 필요한 프로젝트는 자동으로 승인하지 않고 중단합니다. 프로그램에서 연결을 확인하고 프로젝트를 다시 저장하세요. 검증 도구는 원본·참조·프로젝트에 결과를 덮어쓰지 않습니다. 입력 경로와 채널명이 담긴 검증 결과도 설계 자료처럼 로컬에 보관하세요.</p>
+</section>
 </div>
 </main>
-<footer><p>SPD Report Generator v0.1.1 · Copyright © 2026 yunhyok · MIT License<br>사용한 라이브러리의 라이선스는 동봉된 <a href="THIRD_PARTY_NOTICES.txt">THIRD_PARTY_NOTICES.txt</a>를 참고하세요.</p></footer>
+<footer><p>SPD Report Generator v0.1.2 · Copyright © 2026 yunhyok · MIT License<br>사용한 라이브러리의 라이선스는 동봉된 <a href="THIRD_PARTY_NOTICES.txt">THIRD_PARTY_NOTICES.txt</a>를 참고하세요.</p></footer>
 </body>
 </html>

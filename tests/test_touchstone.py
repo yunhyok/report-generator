@@ -112,3 +112,11 @@ def test_record_memory_limits_reject_oversized_inputs(tmp_path, monkeypatch):
     path.write_text("# Hz S RI R 1\n1 " + "0 " * 8 + "\n" + "0 " * 10 + "\n")
     with pytest.raises(ValueError, match="64MiB"):
         read_touchstone(path)
+
+
+def test_resistive_t_network_against_known_open_circuit_impedance(tmp_path):
+    # A 15Ω/5Ω series pair and shared 5Ω shunt has Z11=20Ω, Z22=10Ω, Z12=5Ω.
+    # These rational S values use 50Ω references; the expected answer needs no matrix solve.
+    matrix = np.array([[-73 / 167, 20 / 167], [20 / 167, -113 / 167]], dtype=complex)
+    data = read_touchstone(write_network(tmp_path, [matrix], (100,), reference=50))
+    np.testing.assert_allclose(data.z_diagonal[0], [20, 10], atol=1e-12)

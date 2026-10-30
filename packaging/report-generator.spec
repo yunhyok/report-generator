@@ -15,6 +15,7 @@ a = Analysis(
     datas=[
         (str(ROOT / "src/report_generator/docs/help.html"), "report_generator/docs"),
         (str(ROOT / "src/report_generator/docs/THIRD_PARTY_NOTICES.txt"), "report_generator/docs"),
+        (str(ROOT / "src/report_generator/assets/app.ico"), "report_generator/assets"),
         (str(ROOT / "LICENSE"), "."),
         (str(ROOT / "packaging/licenses"), "licenses"),
     ],
@@ -60,6 +61,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
+    icon=str(ROOT / "src/report_generator/assets/app.ico"),
     disable_windowed_traceback=False,
 )
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name=APP_NAME)

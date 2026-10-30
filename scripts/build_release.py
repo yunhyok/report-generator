@@ -79,6 +79,7 @@ def preflight() -> tuple[str, dict[str, str]]:
     required = (
         "LICENSE", "packaging/report-generator.spec", "packaging/installer.iss", "src/report_generator/docs/help.html",
         "packaging/inno/Korean.isl", "packaging/licenses/InnoSetup/LICENSE.txt",
+        "src/report_generator/assets/app.ico",
         "src/report_generator/docs/THIRD_PARTY_NOTICES.txt", "src/report_generator/selftest.py",
         "packaging/licenses/Qt/LGPL-3.0-only.txt", "packaging/licenses/Qt/GPL-3.0-only.txt",
         "packaging/licenses/openpyxl/LICENSE.txt", "packaging/licenses/et-xmlfile/LICENSE.txt",

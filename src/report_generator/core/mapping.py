@@ -77,7 +77,8 @@ def suggest_mappings(spd: SpdData | None, ts: TouchstoneData | None) -> list[Cha
 
 
 def validate_mappings(config: ReportConfig | list[ChannelMapping],
-                      touchstone: TouchstoneData | None = None) -> None:
+                      touchstone: TouchstoneData | None = None,
+                      spd: SpdData | None = None) -> None:
     rows = config.mappings if isinstance(config, ReportConfig) else config
     selected = [row for row in rows if row.selected]
     if not selected:
@@ -87,6 +88,7 @@ def validate_mappings(config: ReportConfig | list[ChannelMapping],
     identities: set[tuple[str, str]] = set()
     ports: set[int] = set()
     available = {port.index for port in touchstone.ports} if touchstone else None
+    spd_ports = {port.name for port in spd.ports} if spd else None
     for row in selected:
         if not row.channel.strip() or not str(row.site).strip():
             raise ValueError("선택한 행의 채널과 사이트를 입력하세요.")
@@ -96,6 +98,8 @@ def validate_mappings(config: ReportConfig | list[ChannelMapping],
         identities.add(key)
         if not row.confirmed:
             raise ValueError(f"채널 {row.channel}, 사이트 {row.site}의 모호한 매핑을 확인하세요.")
+        if spd_ports is not None and row.spd_port and row.spd_port not in spd_ports:
+            raise ValueError(f"SPD 포트를 찾을 수 없습니다: {row.spd_port}. 입력 파일의 포트 이름을 확인하세요.")
         if row.port_index is not None:
             if isinstance(row.port_index, bool) or not isinstance(row.port_index, int) or row.port_index < 1:
                 raise ValueError("Touchstone 포트 번호는 1 이상의 정수여야 합니다.")

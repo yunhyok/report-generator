@@ -51,7 +51,7 @@ def run_job(action, payload, messages, cancellation):
             config, spd, ts = payload["config"], payload.get("spd"), payload.get("ts")
             validate_config(config)
             if any(m.selected for m in config.mappings):
-                validate_mappings(config, ts)
+                validate_mappings(config, ts, spd)
             for source in (spd, ts):
                 if source and source_signature(source.path) != source.signature:
                     raise ValueError("입력 파일이 변경되었습니다. 파일을 다시 읽고 연결을 확인하세요.")

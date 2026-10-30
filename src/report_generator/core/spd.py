@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from .capacitance import parse_capacitance
-from .models import Component, Port, SpiceModel, SpdData, checkpoint, source_signature
+from .models import Component, PadShape, Port, SpiceModel, SpdData, SurfacePad, checkpoint, source_signature
 
 _PROPERTIES = re.compile(r'(\w+)\s*=\s*("[^"]*"|\S+)')
 _DIMENSION = re.compile(r"^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)(mm|mil|um|u|m|in)?$", re.I)
@@ -35,6 +35,104 @@ def _dimension(token: str) -> float:
     return value
 
 
+def _surface_side(layer: str) -> str | None:
+    name = layer.upper().split("$")[-1]
+    return "Bottom" if name == "BOTTOM" else "Top" if name == "TOP" else None
+
+
+def _pad_shape(lines: list[str]) -> PadShape | None:
+    text = " ".join(lines)
+    tokens = re.split(r"\boffset[xy]\s*=", text, flags=re.I)[0].split()
+    kind = tokens[1]
+    if kind not in ("Circle", "Square", "Box", "Polygon"):
+        return None
+    dimensions = [_dimension(token) for token in tokens[2:]]
+    properties = {key.lower(): value for key, value in _PROPERTIES.findall(text)}
+    ox = _dimension(properties.get("offsetx", "0"))
+    oy = _dimension(properties.get("offsety", "0"))
+    if kind == "Circle" and len(dimensions) == 1 and dimensions[0] > 0:
+        return PadShape(kind, dimensions[0] * 2, dimensions[0] * 2, offset_x_mm=ox, offset_y_mm=oy)
+    if kind in ("Square", "Box") and len(dimensions) == (1 if kind == "Square" else 2) and min(dimensions) > 0:
+        w, h = dimensions[0], dimensions[-1]
+        return PadShape(kind, w, h, ((-w/2, -h/2), (w/2, -h/2), (w/2, h/2), (-w/2, h/2)), ox, oy)
+    if kind == "Polygon" and len(dimensions) >= 6 and len(dimensions) % 2 == 0:
+        return PadShape(kind, vertices=tuple(zip(dimensions[::2], dimensions[1::2])), offset_x_mm=ox, offset_y_mm=oy)
+    return None
+
+
+def _attach_surface_pads(path, data, references, padstacks, encoding, progress, cancel):
+    # Retain component pins only; interior mesh nodes and unreferenced vias stay on disk.
+    encoded = {name.encode("utf-8" if encoding == "utf-8-sig" else encoding): owners for name, owners in references.items()}
+    missing = 0
+
+    def extend_bounds(component, xmin, ymin, xmax, ymax):
+        old = component.pin_bounds
+        component.pin_bounds = (min(old[0], xmin), min(old[1], ymin), max(old[2], xmax), max(old[3], ymax)) if old else (xmin, ymin, xmax, ymax)
+
+    def record(text, owners):
+        nonlocal missing
+        props = {key.lower(): value for key, value in _PROPERTIES.findall(text)}
+        side = _surface_side(props.get("layer", ""))
+        if side is None:
+            return
+        x, y = _dimension(props["x"]), _dimension(props["y"])
+        rotation = float(props.get("absoluterotation", "0"))
+        if not math.isfinite(rotation):
+            raise ValueError("SPD pad rotation must be finite.")
+        for component in owners:
+            extend_bounds(component, x, y, x, y)
+        definitions = padstacks.get(props.get("padstack", ""), {})
+        surfaces = [(_surface_side(layer), shape) for layer, shape in definitions.items() if _surface_side(layer)]
+        if not any(surface == side for surface, _ in surfaces) and "DefaultLibLayer" in definitions:
+            surfaces.append((side, definitions["DefaultLibLayer"]))
+        if not surfaces:
+            missing += 1
+        angle = math.radians(rotation)
+        c, s = math.cos(angle), math.sin(angle)
+        for surface, shape in surfaces:
+            cx = x + shape.offset_x_mm*c - shape.offset_y_mm*s
+            cy = y + shape.offset_x_mm*s + shape.offset_y_mm*c
+            pad = SurfacePad(text.split()[0].split("::")[0], cx, cy, surface, shape, rotation)
+            if shape.kind == "Circle":
+                box = cx-shape.width_mm/2, cy-shape.height_mm/2, cx+shape.width_mm/2, cy+shape.height_mm/2
+            else:
+                vertices = [(cx+dx*c-dy*s, cy+dx*s+dy*c) for dx, dy in shape.vertices]
+                box = min(v[0] for v in vertices), min(v[1] for v in vertices), max(v[0] for v in vertices), max(v[1] for v in vertices)
+            for component in owners:
+                component.pads.append(pad)
+                extend_bounds(component, *box)
+
+    pending = None
+    owners = None
+    offset = next_update = 0
+    with path.open("rb", buffering=1024 * 1024) as handle:
+        for line_no, raw in enumerate(handle, 1):
+            offset += len(raw)
+            if offset >= next_update:
+                checkpoint(cancel)
+                if progress:
+                    progress("SPD 패드 분석", offset, data.signature["size"])
+                next_update = offset + 1024 * 1024
+            if pending is not None and raw.lstrip().startswith(b"+"):
+                pending += " " + raw.decode(encoding).strip().lstrip("+")
+                continue
+            if pending is not None:
+                try:
+                    record(pending, owners)
+                except (ValueError, KeyError, IndexError) as exc:
+                    raise ValueError(f"Invalid SPD pin geometry near line {line_no}: {exc}") from exc
+                pending = None
+            if raw.lstrip().startswith(b"Node"):
+                token = raw.split(None, 1)[0].split(b"::", 1)[0]
+                if token in encoded:
+                    pending, owners = raw.decode(encoding).strip(), encoded[token]
+        if pending is not None:
+            record(pending, owners)
+    checkpoint(cancel)
+    if missing:
+        data.warnings.append(f"표면 핀 {missing}개는 지원하는 패드 형상이 없어 좌표 범위만 사용합니다.")
+
+
 def read_spd(path: str | Path, progress=None, cancel=None) -> SpdData:
     path = Path(path)
     signature = source_signature(path)
@@ -56,6 +154,12 @@ def _scan(path, signature, encoding, progress, cancel):
     components = {}
     placements = {}
     parts = {}
+    node_references = {}
+    padstacks = {}
+    padstack = padlayer = None
+    regular_lines = []
+    regular_continuation = False
+    unsupported_pads = 0
     section = ""
     model = None
     model_elements = 0
@@ -95,10 +199,34 @@ def _scan(path, signature, encoding, progress, cancel):
                     progress("SPD 분석", offset, signature["size"])
                 next_update = offset + 1024 * 1024
             stripped = raw.lstrip()
-            if not section and not stripped.startswith((b".PartialCkt", b".Connect ", b".Component ", b".Part ", b".Port", b".NetAlias", b".NetList")):
+            if not section and not stripped.startswith((b".PartialCkt", b".Connect ", b".Component ", b".Part ", b".Port", b".NetAlias", b".NetList", b".PadStackDef ")):
                 continue
             text = raw.decode(encoding).strip()
             try:
+                if section == "padstack":
+                    if text.startswith(".PadDef "):
+                        padlayer = text.split()[1]
+                        regular_lines = []
+                        regular_continuation = False
+                    elif text.startswith("Regular "):
+                        regular_lines = [text]
+                        regular_continuation = True
+                    elif text.startswith(("Anti ", "Thermal ")):
+                        regular_continuation = False
+                    elif text.startswith("+") and regular_continuation:
+                        regular_lines.append(text.lstrip("+ "))
+                    elif text.startswith(".EndPadDef"):
+                        if regular_lines:
+                            shape = _pad_shape(regular_lines)
+                            if shape is not None:
+                                padstacks[padstack][padlayer] = shape
+                            else:
+                                unsupported_pads += 1
+                        regular_lines = []
+                        regular_continuation = False
+                    elif text.startswith(".EndPadStackDef"):
+                        section = ""
+                    continue
                 if section == "model":
                     if text.lower().startswith(".endpartialckt"):
                         model.valid = model_elements > 0 and not model_invalid
@@ -137,6 +265,10 @@ def _scan(path, signature, encoding, progress, cancel):
                     if text.lower().startswith(".endc"):
                         section = ""
                     elif _PIN.match(text):
+                        node = text.split()[1].removeprefix("$Package.").split("::", 1)[0]
+                        owners = node_references.setdefault(node, [])
+                        if not any(owner is connection for owner in owners):
+                            owners.append(connection)
                         if "::" in text:
                             net = text.split("::", 1)[1].strip()
                             if net not in connection.nets:
@@ -194,7 +326,11 @@ def _scan(path, signature, encoding, progress, cancel):
                             data.ground_nets.append(net)
                     continue
                 tokens = text.split()
-                if text.startswith(".PartialCkt "):
+                if text.startswith(".PadStackDef "):
+                    padstack = tokens[1]
+                    padstacks[padstack] = {}
+                    section = "padstack"
+                elif text.startswith(".PartialCkt "):
                     name = text.split(" ExtNode", 1)[0].split(None, 1)[1]
                     if name in data.models:
                         raise ValueError("Duplicate SPD model definition.")
@@ -220,7 +356,7 @@ def _scan(path, signature, encoding, progress, cancel):
                     side = "Bottom" if props.get("AttachLayer", "").lower() == "bottomair" or "BOTTOM" in props.get("StartLayer", "").upper() else "Top"
                     if tokens[2:4] == ['""', '""']:
                         placements[tokens[1]] = (None, None, rotation, side)
-                        data.warnings.append("An instance has no placement coordinates and is omitted from the placement image.")
+                        data.warnings.append("부품 배치 좌표가 없습니다. 연결된 핀 좌표가 있으면 패드와 핀 범위를 표시합니다.")
                     else:
                         placements[tokens[1]] = (_dimension(tokens[2]), _dimension(tokens[3]), rotation, side)
                 elif text.startswith(".Part "):
@@ -253,8 +389,12 @@ def _scan(path, signature, encoding, progress, cancel):
         if component.model_name in parts:
             component.width_mm, component.height_mm = parts[component.model_name]
     data.components = list(components.values())
+    if node_references:
+        _attach_surface_pads(path, data, node_references, padstacks, encoding, progress, cancel)
+    if unsupported_pads:
+        data.warnings.append(f"패드 정의 {unsupported_pads}개는 지원하지 않는 형상이어서 그리지 않습니다.")
     # shortcut: copper contours are not board edges; add explicit outline parsing when inputs supply it.
-    data.warnings.append("Exact board outline is unavailable; placement view shows component geometry only.")
+    data.warnings.append("보드 외곽선 정보가 없어 부품 좌표와 크기로 배치도를 표시합니다.")
     if any(c.is_cap and c.status == "Unknown" for c in data.components):
         data.warnings.append("Components with unknown activation flags are excluded from active capacitor counts.")
     if progress:

@@ -93,3 +93,70 @@ def test_invalid_model_scalar_is_not_automatic_active(tmp_path):
     path = tmp_path / "synthetic.spd"
     path.write_text(SAMPLE.replace("C1 1 2 1.8u", "C1 1 2 nan"), encoding="utf-8")
     assert not read_spd(path).models["CAP_0805M_220N"].valid
+
+
+def test_referenced_surface_pads_rotation_offsets_and_pin_bounds(tmp_path):
+    geometry = """  Node1!!1::U2_POWER X = 10mm Y = 20mm Layer = Signal$TOP PadStack = RECT AbsoluteRotation = 90
+Node2!!2::GROUND_A X = 12mm Y = 20mm Layer = Signal$TOP PadStack = ROUND
+Node3!!1::U2_POWER X = 5mm Y = 7mm Layer = Signal$BOTTOM PadStack = POLY
+Node4!!2::GROUND_A X = 100mm Y = 100mm Layer = Signal$INNER PadStack = ROUND
+Node999!!9::UNUSED X = 1000mm Y = 1000mm Layer = Signal$TOP PadStack = ROUND
+.PadStackDef RECT
+.PadDef Signal$TOP
+Regular Box 2mm 1mm offSetX = 1mm offSetY = 0mm
+Anti Box 200mm 200mm
+.EndPadDef
+.PadDef Signal$BOTTOM
+Regular Square 1mm
+.EndPadDef
+.EndPadStackDef
+.PadStackDef ROUND
+.PadDef DefaultLibLayer
+Regular Circle 0.25mm
+Anti Polygon -10mm -10mm 10mm -10mm
++ 0mm 10mm
+.EndPadDef
+.EndPadStackDef
+.PadStackDef POLY
+.PadDef Signal$BOTTOM
+Regular Polygon -1mm -1mm 1mm -1mm
++ 0mm 1mm
+.EndPadDef
+.EndPadStackDef
+"""
+    path = tmp_path / "synthetic.spd"
+    path.write_text(geometry + SAMPLE, encoding="utf-8")
+    data = read_spd(path)
+    c1, c2 = data.components
+    assert len(c1.pads) == 3
+    top = next(p for p in c1.pads if p.node.startswith("Node1") and p.side == "Top")
+    assert (top.x_mm, top.y_mm, top.rotation) == (10, 21, 90)
+    assert top.shape.width_mm == 2 and top.shape.height_mm == 1
+    circle = next(p for p in c1.pads if p.shape.kind == "Circle")
+    assert circle.shape.width_mm == .5
+    assert c1.pin_bounds == pytest.approx((9.5, 19.5, 12.25, 22))
+    assert len(c2.pads) == 1 and c2.pads[0].side == "Bottom"
+    assert len(c2.pads[0].shape.vertices) == 3
+    assert c2.pin_bounds == (4, 6, 6, 8)
+    assert c2.x_mm is None
+
+
+def test_unknown_pad_shape_is_skipped_and_geometry_pass_can_cancel(tmp_path):
+    path = tmp_path / "synthetic.spd"
+    path.write_text("""Node1!!1::U2_POWER X = 10mm Y = 20mm Layer = Signal$TOP PadStack = CUSTOM
+.PadStackDef CUSTOM
+.PadDef Signal$TOP
+Regular VendorShape proprietary=token
+.EndPadDef
+.EndPadStackDef
+""" + SAMPLE, encoding="utf-8")
+    data = read_spd(path)
+    assert not data.components[0].pads
+    assert data.components[0].pin_bounds == (10, 20, 10, 20)
+    assert any("지원하지 않는 형상" in warning for warning in data.warnings)
+    cancelled = False
+    def progress(stage, *args):
+        nonlocal cancelled
+        cancelled = stage == "SPD 패드 분석"
+    with pytest.raises(CancelledError):
+        read_spd(path, progress=progress, cancel=lambda: cancelled)

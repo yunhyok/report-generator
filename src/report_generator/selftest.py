@@ -73,11 +73,17 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
             else:
                 report, images = result
                 assert len(report.sheets) == 6 and len(images) == 2
-                book = load_workbook(report.path, read_only=True, data_only=True)
-                assert book["PI ALL@100MHz"]["C5"].value == 1000
-                assert book["DCR"]["C5"].value == 2
+                book = load_workbook(report.path, data_only=True)
+                pi = book["PI ALL@100MHz"]
+                maximum_column = next(cell.column for cell in pi[4] if cell.value == "MAX.")
+                assert pi.cell(5, maximum_column).value == 1000
+                dcr = book["DCR"]
+                site_column = next(cell.column for cell in dcr[4] if cell.value == "SITE0")
+                assert dcr.cell(5, site_column).value == 2
+                assert all(sheet.freeze_panes is None for sheet in book)
                 book.close()
                 assert (Path(__file__).parent / "docs" / "help.html").is_file()
+                assert not window.windowIcon().isNull()
                 state["ok"] = True
                 state["sheets"] = report.sheets
                 state["images"] = len(images)

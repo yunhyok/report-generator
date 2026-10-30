@@ -10,7 +10,7 @@ import numpy as np
 from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.drawing.image import Image
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Border, Color, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.views import Selection
 
@@ -22,9 +22,45 @@ from .touchstone import interpolate_impedance
 
 FREQUENCIES = (1e5, 1e6, 1e7, 1e8, 1e9)
 FREQUENCY_LABELS = ("100kHz", "1MHz", "10MHz", "100MHz", "1GHz")
-WHITE = PatternFill("solid", fgColor="FFFFFF")
-HEADER = PatternFill("solid", fgColor="E8EDF3")
-LINE = Side(style="thin", color="B8BEC7")
+WHITE = PatternFill("solid", fgColor=Color(theme=0))
+HEADER = PatternFill("solid", fgColor=Color(theme=0, tint=-0.0499893185216834))
+CHANNEL_HEADERS = [PatternFill("solid", fgColor=color)
+                   for color in ("E2EFDA", "D9E2F3", "FFF2CC", "EDEDED")]
+LINE = Side(style="thin", color=Color(indexed=64))
+NUMBER = "0.000_ "
+TITLES = {
+    "100": "Power Impedance @ 100MHz", "pi": "Power Impedance", "dcr": "DC Resistance",
+    "cap": "The Number of De-coupling Capacitors",
+    "placement": "The De-coupling Capacitor Distribution Layout",
+}
+
+
+def _font(size=11, bold=False):
+    return Font(name="맑은 고딕", charset=129, family=3, scheme="minor", size=size,
+                bold=bold, italic=False, color=Color(theme=1))
+
+
+def _site_value(site):
+    match = re.fullmatch(r"(?:SITE)?(\d+)", str(site), re.IGNORECASE)
+    return int(match[1]) if match else site
+
+
+def _priority(value):
+    text = str(value).strip()
+    return int(text) if re.fullmatch(r"[+-]?\d+", text) else text or None
+
+
+def _priorities(config):
+    return {(m.channel, m.site): _priority(m.priority) for m in _mappings(config)}
+
+
+def _widths(ws, column, widths):
+    for offset, width in enumerate(widths):
+        ws.column_dimensions[get_column_letter(column + offset)].width = width
+
+
+def _label_width(labels, minimum):
+    return min(255, max(minimum, max((len(str(label)) * 1.1 for label in labels), default=minimum)))
 
 
 def _mappings(config, ts=None, summary=False):
@@ -109,7 +145,7 @@ def plan_pages(config: ReportConfig, spd: SpdData | None = None,
     return [name for _, name, _ in pages], omitted
 
 
-def _put(ws, row, column, value, *, header=False, number_format=None):
+def _put(ws, row, column, value, *, header=False, number_format=None, bold=None, size=11, fill=None):
     cell = ws.cell(row, column)
     if isinstance(value, str):
         # Explicit string type prevents spreadsheet formulas from source names.
@@ -117,9 +153,9 @@ def _put(ws, row, column, value, *, header=False, number_format=None):
         cell.data_type = "s"
     else:
         cell.value = value
-    cell.font = Font(name="Malgun Gothic", size=11, bold=header, color="202226")
-    cell.fill = HEADER if header else WHITE
-    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=header)
+    cell.font = _font(size, header if bold is None else bold)
+    cell.fill = fill if fill is not None else HEADER if header else WHITE
+    cell.alignment = Alignment(horizontal="center", vertical="center")
     cell.border = Border(left=LINE, right=LINE, top=LINE, bottom=LINE)
     if number_format:
         cell.number_format = number_format
@@ -132,11 +168,10 @@ def _table(ws, headers, rows, row=4, column=2, number_columns=()):
     for offset, values in enumerate(rows, row + 1):
         for i, value in enumerate(values):
             _put(ws, offset, column + i, value,
-                 number_format="0.000" if i in number_columns else None)
-    ws.row_dimensions[row].height = 30
+                 number_format=NUMBER if i in number_columns else None)
 
 
-def _base_sheet(wb, name, config):
+def _base_sheet(wb, name, config, kind, ts=None):
     ws = wb.create_sheet(name)
     ws.sheet_view.showGridLines = False
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -144,31 +179,42 @@ def _base_sheet(wb, name, config):
     ws.page_setup.paperSize = ws.PAPERSIZE_A3
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
-    ws.freeze_panes = "C5"
-    ws.column_dimensions["A"].width = 3
-    for i in range(2, 60):
-        ws.column_dimensions[get_column_letter(i)].width = 11
-    ws.column_dimensions["B"].width = 32
-    ws.column_dimensions["P"].width = 27
-    title = ws.cell(1, 2, ILLEGAL_CHARACTERS_RE.sub("", f"{config.settings.title} · {name}")[:32767])
-    title.data_type = "s"
-    title.font = Font(name="Malgun Gothic", size=24, bold=True, color="202226")
-    title.fill = WHITE
-    ws.row_dimensions[1].height = 38
-    subtitle = " · ".join(str(v) for v in [config.settings.product, config.settings.board_type,
-                          config.settings.report_date, config.settings.revision] if v)
-    ws.cell(2, 2, ILLEGAL_CHARACTERS_RE.sub("", subtitle)[:32767]).data_type = "s"
-    ws.cell(2, 2).font = Font(name="Malgun Gothic", size=11, color="555555")
-    ws.cell(2, 2).fill = WHITE
+    ws.sheet_view.selection = [Selection(activeCell="B4", sqref="B4")]
+    ws.sheet_format.defaultRowHeight = 16.5
+    ws.sheet_format.defaultColWidth = 9
+    ws.column_dimensions["A"].width = 9
+    custom_title = config.settings.title.strip()
+    page_title = TITLES.get(kind, "")
+    if custom_title and custom_title != "Power Integrity Report":
+        page_title = f"{custom_title} · {page_title}" if page_title else custom_title
+    if page_title:
+        title = ws.cell(1, 1, ILLEGAL_CHARACTERS_RE.sub("", page_title)[:32767])
+        title.data_type = "s"
+        title.font = _font(24, True)
+        title.fill = WHITE
+        title.alignment = Alignment(vertical="center")
+    ws.row_dimensions[1].height = 38.25
+    if kind in {"100", "pi"} and ts is not None:
+        def frequency_label(value):
+            for scale, suffix in ((1e9, "GHz"), (1e6, "MHz"), (1e3, "kHz")):
+                if value >= scale:
+                    return f"{value / scale:g}{suffix}"
+            return f"{value:g}Hz"
+        sweep = ts.frequency_hz[ts.frequency_hz > 0]
+        lower, upper = (sweep[0], sweep[-1]) if len(sweep) else (0, 0)
+        _note(ws, 2, f"* {frequency_label(lower)} ~ {frequency_label(upper)} : Automatic Frequency Sweep", 1)
+    metadata = " · ".join(str(v) for v in [config.settings.product, config.settings.board_type,
+                         config.settings.report_date, config.settings.revision] if v)
+    _note(ws, 3, metadata, 1)
     return ws
 
 
 def _note(ws, row, text, column=2):
     cell = ws.cell(row, column, ILLEGAL_CHARACTERS_RE.sub("", text)[:32767])
     cell.data_type = "s"
-    cell.font = Font(name="Malgun Gothic", size=11, color="555555")
+    cell.font = _font()
     cell.fill = WHITE
-    cell.alignment = Alignment(wrap_text=False)
+    cell.alignment = Alignment(vertical="center")
 
 
 def _add_image(ws, path, anchor, max_width=900):
@@ -181,44 +227,137 @@ def _add_image(ws, path, anchor, max_width=900):
 
 
 def _write_100(ws, spots, factor, unit):
-    sites = list(dict.fromkeys(m.site for m, values, _ in spots if values[3] is not None))
-    channels = list(dict.fromkeys(m.channel for m, values, _ in spots if values[3] is not None))
+    sites = list(dict.fromkeys(m.site for m, _, _ in spots))
+    channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
+    small = len(sites) <= 8
     lookup = {(m.channel, m.site): values[3] * factor for m, values, _ in spots if values[3] is not None}
+    priorities = {m.channel: _priority(m.priority) for m, _, _ in spots}
     rows = []
     for channel in channels:
         values = [lookup.get((channel, site)) for site in sites]
         available = [v for v in values if v is not None]
-        maximum = max(available)
-        average = sum(available) / len(available)
-        deviation = (maximum - average) / average if average != 0 else None
-        rows.append([channel, maximum, average, deviation, *values])
-    _table(ws, [f"Channel / [{unit}]", "MAX.", "AVG.", "편차", *sites], rows,
-           number_columns=range(1, len(sites) + 4))
+        maximum = max(available) if available else None
+        average = sum(available) / len(available) if available else None
+        deviation = (maximum - average) / average if average else None
+        rows.append([priorities[channel], channel, *values, deviation, maximum, average] if small
+                    else [channel, maximum, average, deviation, *values])
+    if small:
+        headers = ["Priority", f"Channel / [{unit}]", *sites, "편차", "MAX.", "AVG."]
+        _widths(ws, 2, [9, _label_width(channels, 36.75), *([9] * (len(sites) + 3))])
+        deviation_column, site_column = 4 + len(sites), 4
+        number_columns = range(2, len(headers))
+    else:
+        headers = [f"Channel / [{unit}]", "MAX.", "AVG.", "편차", *sites]
+        numeric_width = 6.875 if unit == "Ω" else 9
+        _widths(ws, 2, [_label_width(channels, 16.125), numeric_width, numeric_width,
+                        7.75 if unit == "Ω" else 6.75, *([numeric_width] * len(sites))])
+        deviation_column, site_column = 5, 6
+        number_columns = range(1, len(headers))
+    _table(ws, headers, rows, number_columns=number_columns)
     for r in range(5, len(rows) + 5):
-        ws.cell(r, 5).number_format = "0.0%"
+        ws.cell(r, deviation_column).number_format = "0.0%"
+        if not small:
+            ws.cell(r, 2).font = _font(bold=True)
     flags = {(m.channel, m.site): interpolated[3] for m, _, interpolated in spots}
     for r, channel in enumerate(channels, 5):
-        for c, site in enumerate(sites, 6):
+        for c, site in enumerate(sites, site_column):
             if flags.get((channel, site)):
                 ws.cell(r, c).number_format = '0.000"*"'
     _note(ws, len(rows) + 7, "편차 = (MAX − AVG) / AVG. 빈 셀은 주파수 범위 밖이거나 변환에 실패한 값입니다.")
     _note(ws, len(rows) + 8, "* 복소 Z 선형 보간값. MAX·AVG·편차는 표시된 유효 값으로 계산합니다.")
 
 
-def _write_pi(ws, spots, factor, unit, column=2):
-    rows = [[m.channel, m.site, m.priority, *[v * factor if v is not None else None for v in values]]
-            for m, values, _ in spots if any(v is not None for v in values)]
-    _table(ws, ["Channel", "SITE", "Priority", *[f"{v} [{unit}]" for v in FREQUENCY_LABELS]],
-           rows, column=column, number_columns=range(3, 8))
-    valid_spots = [spot for spot in spots if any(v is not None for v in spot[1])]
-    for row, (_, _, flags) in enumerate(valid_spots, 5):
-        for offset, interpolated in enumerate(flags):
-            if interpolated:
-                ws.cell(row, column + 3 + offset).number_format = '0.000"*"'
-    _note(ws, len(rows) + 7, "|Zii|. * 복소 Z 선형 보간값. 주파수 범위 밖은 공란입니다.", column)
+def _merged(ws, row, column, end_row, end_column, value, *, header=False, fill=None, number_format=None):
+    for r in range(row, end_row + 1):
+        for c in range(column, end_column + 1):
+            _put(ws, r, c, value if (r, c) == (row, column) else None,
+                 header=header, fill=fill, number_format=number_format)
+    if end_row > row or end_column > column:
+        ws.merge_cells(start_row=row, start_column=column, end_row=end_row, end_column=end_column)
 
 
-def _write_dcr(ws, rows):
+def _pi_values(ws, row, column, values, flags, factor, number_format, fill=None):
+    for index, (value, interpolated) in enumerate(zip(values, flags)):
+        fmt = number_format[:-2] + '"*"' if interpolated else number_format
+        _put(ws, row, column + index, value * factor if value is not None else None,
+             number_format=fmt, bold=index == 3, fill=fill)
+
+
+def _deviation(spots):
+    values = [values[3] for _, values, _ in spots if values[3] is not None]
+    average = sum(values) / len(values) if values else 0
+    return (max(values) - average) / average if average else None
+
+
+def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, channel_order=()):
+    channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
+    by_channel = {channel: [spot for spot in spots if spot[0].channel == channel] for channel in channels}
+    number_format = "0.0_ " if wide and unit == "mΩ" else NUMBER
+    if not wide or (detail and unit == "mΩ"):
+        priority = not wide
+        headers = (["Priority"] if priority else []) + [f"Channel / [{unit}]", "SITE", *FREQUENCY_LABELS]
+        if not detail:
+            headers.append("편차")
+        _table(ws, headers, [], column=column)
+        if wide and detail:
+            color_index = channel_order.index(channels[0]) if channels[0] in channel_order else 0
+            for c in range(column, column + len(headers)):
+                ws.cell(4, c).fill = CHANNEL_HEADERS[color_index % len(CHANNEL_HEADERS)]
+        channel_column = column + priority
+        site_column = channel_column + 1
+        if detail and wide:
+            widths = [_label_width(channels, 16.125), 7.5, 8.5, 7.5, 8.125, 9.625, 9.5]
+        else:
+            widths = ([9] if priority else []) + [_label_width(channels, 16.125 if detail else 30.5), 9]
+            widths += [9] * 5 if detail else [9.5, 9.125, 9.125, 9.125, 9.125, 9]
+        _widths(ws, column, widths)
+        row = 5
+        for index, channel in enumerate(channels):
+            entries = by_channel[channel]
+            fill = HEADER if not detail and index % 2 else WHITE
+            for mapping, values, flags in entries:
+                if priority:
+                    _put(ws, row, column, _priority(mapping.priority), fill=fill)
+                _put(ws, row, channel_column, channel, fill=fill)
+                _put(ws, row, site_column, _site_value(mapping.site), fill=fill)
+                _pi_values(ws, row, site_column + 1, values, flags, factor, number_format, fill)
+                row += 1
+            if not detail:
+                _merged(ws, row - len(entries), site_column + 6, row - 1, site_column + 6,
+                        _deviation(entries), fill=fill, number_format="0.0%")
+    else:
+        across = 1 if detail else 4
+        block_width = 6 if detail else 7
+        row = 4
+        for band_start in range(0, len(channels), across):
+            band = channels[band_start:band_start + across]
+            band_height = max(len(by_channel[channel]) for channel in band)
+            for offset, channel in enumerate(band):
+                start = column + offset * block_width
+                color_index = channel_order.index(channel) if channel in channel_order else band_start + offset
+                fill = CHANNEL_HEADERS[color_index % len(CHANNEL_HEADERS)]
+                _merged(ws, row, start, row, start + block_width - 1, f"{channel} / [{unit}]", header=True, fill=fill)
+                for index, label in enumerate(["SITE", *FREQUENCY_LABELS] + ([] if detail else ["편차"])):
+                    _put(ws, row + 1, start + index, label, header=True, fill=fill)
+                widths = [9] * block_width if unit == "Ω" else (
+                    [5.5, 8.5, 7, 8.125, 9.25, 7.875, 5.75],
+                    [5.5, 9, 7.875, 8.125, 9.625, 10, 5.75],
+                    [5.5, 9, 7.875, 8.125, 9.625, 10, 6.75],
+                    [5.5, 9, 7.875, 8.125, 9.25, 9, 5.75],
+                )[offset][:block_width]
+                _widths(ws, start, widths)
+                for data_row, (mapping, values, flags) in enumerate(by_channel[channel], row + 2):
+                    _put(ws, data_row, start, _site_value(mapping.site))
+                    _pi_values(ws, data_row, start + 1, values, flags, factor, number_format)
+                if not detail:
+                    end = row + 1 + len(by_channel[channel])
+                    _merged(ws, row + 2, start + 6, end, start + 6,
+                            _deviation(by_channel[channel]), number_format="0.0%")
+            row += band_height + 4
+    _note(ws, row + 2, "|Zii|. * 복소 Z 선형 보간값. 주파수 범위 밖은 공란입니다.", column)
+
+
+def _write_dcr(ws, rows, config):
     sites = list(dict.fromkeys(row.site for row in rows))
     channels = list(dict.fromkeys(row.channel for row in rows))
     lookup = {}
@@ -227,24 +366,53 @@ def _write_dcr(ws, rows):
         if key in lookup or not isfinite(row.resistance_mohm) or row.resistance_mohm < 0:
             raise ValueError("DCR 값은 채널/사이트별로 하나의 유효한 음이 아닌 값이어야 합니다.")
         lookup[key] = row.resistance_mohm
-    _table(ws, ["Channel / [mΩ]", *sites],
-           [[channel, *[lookup.get((channel, site)) for site in sites]] for channel in channels],
-           number_columns=range(1, len(sites) + 1))
+    small = len(sites) <= 8
+    priorities = _priorities(config)
+    data = [([next((priorities.get((channel, site)) for site in sites if priorities.get((channel, site)) is not None), None)] if small else []) +
+            [channel, *[lookup.get((channel, site)) for site in sites]] for channel in channels]
+    headers = (["Priority"] if small else []) + ["Channel / [mΩ]", *sites]
+    _table(ws, headers, data, number_columns=range(2 if small else 1, len(headers)))
+    if small:
+        _widths(ws, 2, [8.25, _label_width(channels, 36.75), *([9.5] * len(sites))])
+    else:
+        pcb = config.settings.board_type == "PCB"
+        _widths(ws, 2, [_label_width(channels, 15.875 if pcb else 15.375), *([9 if pcb else 7.875] * len(sites))])
 
 
 def _write_caps(ws, rows, spd, config):
     sites = list(dict.fromkeys(row["site"] for row in rows))
     channels = list(dict.fromkeys(row["channel"] for row in rows))
-    values = list(dict.fromkeys(row["capacitance_f"] for row in rows))
+    values = sorted({row["capacitance_f"] for row in rows}, key=lambda value: (value is None, value or 0))
     labels = {row["capacitance_f"]: row["label"] for row in rows}
     lookup = {(r["channel"], r["site"], r["capacitance_f"]): r["count"] for r in rows}
     mapped = {(m.channel, m.site) for m in _mappings(config)}
+    priorities = _priorities(config)
+    small = len(sites) <= 8
+    channel_column = 3 if small else 2
+    site_column = channel_column + 1
+    if small:
+        _widths(ws, 2, [8.25, _label_width(channels, 30.5), *([6.625] * len(sites))])
+    else:
+        _widths(ws, 2, [_label_width(channels, 15.625 if config.settings.board_type == "PCB" else 14.625), *([9] * len(sites))])
     row_number = 4
     for value in values:
-        data = [[channel, *[lookup.get((channel, site, value), 0) if (channel, site) in mapped else None
-                            for site in sites]] for channel in channels]
-        _table(ws, [f"Channel / {labels[value]}", *sites], data, row=row_number)
-        row_number += len(data) + 3
+        if small:
+            _merged(ws, row_number, 2, row_number + 1, 2, "Priority", header=True)
+        _merged(ws, row_number, channel_column, row_number + 1, channel_column, "Channel", header=True)
+        _merged(ws, row_number, site_column, row_number, site_column + len(sites) - 1, labels[value], header=True)
+        for column, site in enumerate(sites, site_column):
+            _put(ws, row_number + 1, column, site, header=True)
+        for row, channel in enumerate(channels, row_number + 2):
+            if small:
+                priority = next((priorities.get((channel, site)) for site in sites if priorities.get((channel, site)) is not None), None)
+                _put(ws, row, 2, priority)
+            _put(ws, row, channel_column, channel, size=11 if small else 12)
+            for column, site in enumerate(sites, site_column):
+                count = lookup.get((channel, site, value), 0) if (channel, site) in mapped else None
+                _put(ws, row, column, count, number_format="0_ " if small else "General")
+            if not small:
+                ws.row_dimensions[row].height = 17.25
+        row_number += len(channels) + 3
     nets = mapped_nets(spd, config)
     inactive = sum(c.is_cap and (not nets or bool(nets.intersection(c.nets))) and
                    not component_active(c, spd) for c in spd.components)
@@ -266,7 +434,7 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
             raise ValueError("입력 파일에 보고서를 덮어쓸 수 없습니다.")
     from .mapping import validate_mappings
     if any(m.selected for m in config.mappings):
-        validate_mappings(config, ts)
+        validate_mappings(config, ts, spd)
     pages, omitted = _plan(config, spd, ts)
     if not pages:
         raise ValueError("보고서를 만들 유효한 데이터가 없습니다. 입력과 채널 매핑을 확인하세요.")
@@ -277,6 +445,7 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
         warnings.append("일부 기준 주파수 값에 복소 Z 선형 보간을 적용했습니다.")
     target.parent.mkdir(parents=True, exist_ok=True)
     wb = Workbook()
+    wb._fonts[0] = _font()
     wb.remove(wb.active)
     temporary_output = None
     try:
@@ -285,20 +454,18 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                 checkpoint(cancel)
                 if progress:
                     progress(f"시트 생성: {name}", index, len(pages))
-                ws = _base_sheet(wb, name, config)
+                ws = _base_sheet(wb, name, config, kind, ts)
                 image_bottom = 4
                 if kind == "100":
                     _write_100(ws, payload, factor, unit)
                 elif kind == "pi":
-                    _write_pi(ws, payload, factor, unit)
+                    _write_pi(ws, payload, factor, unit,
+                              wide=len({mapping.site for mapping, _, _ in payload}) > 8)
                 elif kind == "dcr":
-                    _write_dcr(ws, payload)
+                    _write_dcr(ws, payload, config)
                 elif kind == "cap":
                     _write_caps(ws, payload, spd, config)
                 elif kind == "placement":
-                    ws.freeze_panes = None
-                    # openpyxl leaves frozen-pane selections behind; Excel 2013 rejects them.
-                    ws.sheet_view.selection = [Selection(activeCell="B4", sqref="B4")]
                     for side_index, side in enumerate(payload):
                         checkpoint(cancel)
                         path = render_placement(spd, config, side, Path(images) / f"placement-{side}.png")
@@ -307,11 +474,22 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                     path = render_group_plot(ts, config, payload, Path(images) / f"group-{index}.png")
                     image_bottom = _add_image(ws, path, "B4")
                     _write_pi(ws, [(m, values, flags) for m, values, flags in _spot_rows(config, ts)
-                                   if m.group == payload], factor, unit, column=16)
-                if warnings:
-                    _note(ws, max(ws.max_row + 3, image_bottom + 2, 7), "주의: " + " | ".join(warnings))
+                                   if m.group == payload], factor, unit, column=16,
+                              wide=len({mapping.site for mapping in _mappings(config, ts)}) > 8, detail=True,
+                              channel_order=list(dict.fromkeys(mapping.channel for mapping in _mappings(config, ts))))
+                printed_warnings = []
+                if kind == "placement" and spd:
+                    printed_warnings = spd.warnings
+                elif kind == "cap" and spd:
+                    printed_warnings = [warning for warning in spd.warnings
+                                        if not any(term in warning.lower() for term in
+                                                   ("outline", "placement", "coordinate", "외곽선", "배치", "좌표", "패드"))]
+                elif kind in {"100", "pi", "group"} and ts:
+                    printed_warnings = ts.warnings
+                if printed_warnings:
+                    _note(ws, max(ws.max_row + 3, image_bottom + 2, 7), "주의: " + " | ".join(printed_warnings))
                 last_column = max(ws.max_column, 30 if kind == "placement" else 23 if kind == "group" else 2)
-                ws.print_area = f"B1:{get_column_letter(last_column)}{max(ws.max_row, image_bottom)}"
+                ws.print_area = f"A1:{get_column_letter(last_column)}{max(ws.max_row, image_bottom)}"
             checkpoint(cancel)
             handle, temporary_output = tempfile.mkstemp(prefix=f".{target.stem}-", suffix=".xlsx", dir=target.parent)
             os.close(handle)
