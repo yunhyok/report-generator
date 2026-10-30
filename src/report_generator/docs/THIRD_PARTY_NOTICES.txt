@@ -3,9 +3,9 @@ SPD Report Generator — Third-party notices
 
 The application source is licensed under the MIT license in the accompanying
 LICENSE file. Third-party components retain their own copyrights and licenses.
-The portable distribution includes their complete installed license files in
+The installed application includes their complete license files in
 licenses/, and the exact build versions in BUILD_MANIFEST.json. The list below
-identifies the pinned v0.1.0 Windows build; additional notices inside the copied
+identifies the pinned v0.1.1 Windows build; additional notices inside the copied
 license files apply to bundled native libraries and fonts.
 
 Python 3.12.10 — Python Software Foundation License and incorporated notices.
@@ -17,7 +17,7 @@ PySide6 Essentials / Shiboken6 / Qt 6.11.0
 Copyright (C) The Qt Company Ltd. and other contributors.
 This application uses the LGPL version 3 option for the QtCore, QtGui,
 QtWidgets, PySide6 and Shiboken6 libraries. These libraries are unmodified
-upstream binary distributions, dynamically loaded from the portable folder.
+upstream binary distributions, dynamically loaded from the application folder.
 Their use and distribution are covered by the GNU Lesser General Public License
 version 3. The full LGPL v3 and the incorporated GPL v3 text are provided in
 licenses/Qt/LGPL-3.0-only.txt and licenses/Qt/GPL-3.0-only.txt.

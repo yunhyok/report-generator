@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spd-report-generator"
-version = "0.1.0"
+version = "0.1.1"
 description = "Offline Windows power-integrity report generator for SPD and Touchstone files"
 requires-python = ">=3.12"
 license = "MIT"

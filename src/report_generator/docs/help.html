@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>SPD Report Generator 0.1.0 · 사용 설명서</title>
+<title>SPD Report Generator 0.1.1 · 사용 설명서</title>
 <style>
 :root{color-scheme:dark;--bg:#202226;--panel:#2b2e34;--inset:#1d2025;--text:#eceef1;--muted:#bdc5d0;--line:#626c7a;--accent:#8fc1ff}
 *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:1rem}body{margin:0;background:var(--bg);color:var(--text);font:18px/1.8 "Segoe UI","Malgun Gothic",sans-serif;word-break:keep-all;overflow-wrap:anywhere}a{color:var(--accent);text-underline-offset:.2em}a:focus-visible{outline:3px solid var(--accent);outline-offset:4px}header,main,footer{max-width:1180px;margin:auto;padding:2rem}header{padding-bottom:1rem}h1{font-size:clamp(1.9rem,4vw,2.65rem);line-height:1.3;margin:.5rem 0 1rem}h2{font-size:1.65rem;line-height:1.4;margin:0 0 1rem}h3{font-size:1.2rem;margin:1.5rem 0 .5rem}p{margin:.7rem 0}strong{color:#fff}small,.muted{color:var(--muted)}.eyebrow{color:var(--accent);font-weight:600;letter-spacing:.04em}.layout{display:grid;grid-template-columns:235px minmax(0,1fr);gap:1.75rem}nav{align-self:start;position:sticky;top:1rem;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:1rem;font-size:1rem}nav p{margin:0 0 .5rem;font-weight:700}nav a{display:block;padding:.35rem 0}section{background:var(--panel);border:1px solid #505761;border-radius:7px;padding:1.7rem;margin-bottom:1.5rem}ul,ol{padding-left:1.5rem}li{margin:.5rem 0}.callout{border-left:4px solid var(--accent);background:var(--inset);padding:.8rem 1rem;margin:1rem 0}.table-wrap{overflow-x:auto;margin:1rem 0}table{border-collapse:collapse;width:100%;font-size:1rem}th,td{text-align:left;vertical-align:top;border:1px solid var(--line);padding:.7rem .8rem}th{background:#353a42;font-weight:700}code,kbd{background:var(--inset);border:1px solid #505761;border-radius:3px;padding:.1rem .35rem;font: .95em/1.6 Consolas,"Malgun Gothic",monospace}pre{white-space:pre-wrap;background:var(--inset);padding:1rem;border:1px solid var(--line);border-radius:4px;overflow:auto}pre code{padding:0;border:0}.formula{font-family:Consolas,"Malgun Gothic",monospace;background:var(--inset);padding:1rem;overflow-x:auto;white-space:nowrap}.skip{position:absolute;left:1rem;top:-5rem;padding:.5rem;background:var(--panel)}.skip:focus{top:1rem}footer{padding-top:0;color:var(--muted);font-size:1rem}.top-link{font-size:1rem}
@@ -16,7 +16,7 @@
 <body id="top">
 <a class="skip" href="#quickstart">본문으로 건너뛰기</a>
 <header>
-<p class="eyebrow">SPD REPORT GENERATOR · v0.1.0</p>
+<p class="eyebrow">SPD REPORT GENERATOR · v0.1.1</p>
 <h1>입력 파일에서 Excel 보고서까지</h1>
 <p>SPD의 부품·모델·배치, Touchstone의 임피던스, 직접 입력한 DCR을 조합해 보고서를 만듭니다. <strong>파일 처리는 이 PC에서 이루어지며 클라우드 업로드나 계정 연결이 필요하지 않습니다.</strong></p>
 <p class="muted">프로그램에서 <b>Help → 사용 설명서</b> 또는 <kbd>F1</kbd>로 이 문서를 엽니다. 인터넷 없이 읽거나 브라우저의 인쇄 기능으로 저장할 수 있습니다.</p>
@@ -39,8 +39,8 @@
 <section id="quickstart">
 <h2>1. 처음 실행하기</h2>
 <ol>
-<li>Windows x64용 <code>SPD-Report-Generator-v0.1.0-windows-x64.zip</code>을 내려받아 <strong>전체 압축을 해제</strong>합니다.</li>
-<li><code>SPD Report Generator</code> 폴더 안의 <code>SPD Report Generator.exe</code>를 실행합니다. Python을 별도로 설치할 필요는 없습니다. 실행 파일과 <code>_internal</code> 폴더를 함께 보관하세요.</li>
+<li>Windows x64용 <code>SPD-Report-Generator-v0.1.1-Setup-x64.exe</code>를 실행해 설치합니다. 현재 사용자 계정에 설치되며 관리자 권한이나 별도의 Python 설치는 필요하지 않습니다. 바탕 화면 바로가지는 설치 중 선택할 수 있습니다.</li>
+<li>시작 메뉴에서 <b>SPD Report Generator</b>를 엽니다. 같은 메뉴의 <b>Help</b>로 이 설명서를 바로 열 수 있습니다.</li>
 <li><b>1 입력</b>에서 필요한 SPD·Touchstone 파일을 고르고 <b>파일 읽기</b>를 누릅니다. 제목, 제품명, 보드 종류와 작성일 등을 입력합니다.</li>
 <li><b>2 채널·그룹</b>에서 사용할 행을 고르고 Net·사이트·채널·SPD 포트를 확인합니다. 모호한 연결을 해결한 뒤 <b>확인</b>에 체크합니다.</li>
 <li>필요하면 <b>3 CAP·DCR</b>에서 용량을 수정하거나 DCR을 입력합니다.</li>
@@ -48,6 +48,9 @@
 </ol>
 <div class="callout">파일이 모두 있어야 시작할 수 있는 것은 아닙니다. SPD만으로 CAP 수량·배치도를, Touchstone만으로 임피던스 보고서를, DCR 입력만으로 DCR 표를 만들 수 있습니다.</div>
 <p>읽기와 출력 중에는 아래 진행 상태를 확인할 수 있습니다. 중단하려면 <b>취소</b>를 누릅니다. 파일을 새로 읽으면 자동 매핑을 다시 제안하고 CAP 수정값을 초기화하므로, 이어서 작업할 설정은 먼저 프로젝트로 저장하세요.</p>
+<h3>업데이트와 제거</h3>
+<p>업데이트할 때는 작업을 저장하고 프로그램을 닫은 뒤 새 설치 파일을 실행하세요. 기본 설치 위치는 <code>%LOCALAPPDATA%\Programs\SPD Report Generator</code>이며, 재설치 시 기존 설치 위치를 사용합니다.</p>
+<p>제거하려면 <b>Windows 설정 → 앱 → 설치된 앱</b>에서 SPD Report Generator를 찾아 <b>제거</b>를 선택합니다. 직접 저장한 프로젝트·보고서와 원본 입력 파일은 제거하지 않습니다.</p>
 </section>
 <section id="inputs">
 <h2>2. 입력과 지원 범위</h2>
@@ -202,6 +205,6 @@
 </section>
 </div>
 </main>
-<footer><p>SPD Report Generator v0.1.0 · Copyright © 2026 yunhyok · MIT License<br>사용한 라이브러리의 라이선스는 동봉된 <a href="THIRD_PARTY_NOTICES.txt">THIRD_PARTY_NOTICES.txt</a>를 참고하세요.</p></footer>
+<footer><p>SPD Report Generator v0.1.1 · Copyright © 2026 yunhyok · MIT License<br>사용한 라이브러리의 라이선스는 동봉된 <a href="THIRD_PARTY_NOTICES.txt">THIRD_PARTY_NOTICES.txt</a>를 참고하세요.</p></footer>
 </body>
 </html>

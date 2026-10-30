@@ -1,4 +1,4 @@
-"""Build, self-test and package the portable Windows release without installing packages.
+"""Build, self-test and package the Windows installer without installing packages.
 
 Prepare an isolated environment first:
   py -3.12 -m venv .venv-build
@@ -7,6 +7,7 @@ Prepare an isolated environment first:
   .venv-build\\Scripts\\python scripts/build_release.py
 Use --check for read-only preflight. Build stages and previous releases are retained
 under build/ for inspection; this script never recursively deletes directories.
+Inno Setup 7 or 6 must be installed; set ISCC to override compiler discovery.
 """
 from __future__ import annotations
 
@@ -41,9 +42,28 @@ def inside_workspace(path: Path) -> Path:
     return resolved
 
 
+def find_iscc() -> Path:
+    configured = os.environ.get("ISCC")
+    if configured:
+        candidate = Path(configured.strip('"')).expanduser()
+        if candidate.is_file():
+            return candidate.resolve()
+        raise FileNotFoundError("ISCC points to a missing Inno Setup compiler.")
+    found = shutil.which("ISCC.exe") or shutil.which("ISCC")
+    if found:
+        return Path(found).resolve()
+    for program_files in (os.environ.get("ProgramFiles", r"C:\Program Files"),
+                          os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")):
+        for version in (7, 6):
+            candidate = Path(program_files) / f"Inno Setup {version}" / "ISCC.exe"
+            if candidate.is_file():
+                return candidate.resolve()
+    raise FileNotFoundError("Install Inno Setup 7 or 6, or set ISCC to its ISCC.exe compiler.")
+
+
 def preflight() -> tuple[str, dict[str, str]]:
     if sys.platform != "win32" or platform.machine().lower() not in {"amd64", "x86_64"} or sys.maxsize <= 2**32:
-        raise RuntimeError("The portable release must be built with Windows x64 Python.")
+        raise RuntimeError("The Windows release must be built with Windows x64 Python.")
     if sys.version_info[:3] != (3, 12, 10):
         raise RuntimeError("Use CPython 3.12.10 to reproduce this release.")
     versions = {}
@@ -57,7 +77,7 @@ def preflight() -> tuple[str, dict[str, str]]:
             raise RuntimeError(f"{name}: expected {expected}, found {actual}. Prepare the isolated build environment.")
         versions[name] = actual
     required = (
-        "LICENSE", "packaging/report-generator.spec", "src/report_generator/docs/help.html",
+        "LICENSE", "packaging/report-generator.spec", "packaging/installer.iss", "src/report_generator/docs/help.html",
         "src/report_generator/docs/THIRD_PARTY_NOTICES.txt", "src/report_generator/selftest.py",
         "packaging/licenses/Qt/LGPL-3.0-only.txt", "packaging/licenses/Qt/GPL-3.0-only.txt",
         "packaging/licenses/openpyxl/LICENSE.txt", "packaging/licenses/et-xmlfile/LICENSE.txt",
@@ -68,10 +88,41 @@ def preflight() -> tuple[str, dict[str, str]]:
     python_license = Path(sys.base_prefix) / "LICENSE.txt"
     if not python_license.is_file():
         raise FileNotFoundError("The installed CPython LICENSE.txt is required.")
+    compiler = find_iscc()
+    if not (compiler.parent / "Languages/Korean.isl").is_file():
+        raise FileNotFoundError("The Inno Setup Korean language file is required.")
     version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
     if not version or any(character not in "0123456789.abrc-" for character in version):
         raise ValueError("Unexpected release version.")
     return version, versions
+
+
+def compile_installer(payload: Path, stage: Path, version: str) -> Path:
+    payload = inside_workspace(payload)
+    stage = inside_workspace(stage)
+    if not (payload / f"{APP_NAME}.exe").is_file():
+        raise FileNotFoundError("Validated application payload is missing.")
+    manifest = json.loads((payload / "BUILD_MANIFEST.json").read_text(encoding="utf-8"))
+    if manifest.get("version") != version:
+        raise ValueError("Installer and payload versions do not match; rebuild the application.")
+    output = inside_workspace(stage / "installer")
+    output.mkdir(exist_ok=True)
+    subprocess.run([
+        str(find_iscc()), f"/DAppVersion={version}", f"/DPayloadDir={payload}",
+        f"/DInstallerOutputDir={output}", str(ROOT / "packaging/installer.iss"),
+    ], cwd=ROOT, check=True)
+    installer = inside_workspace(output / f"SPD-Report-Generator-v{version}-Setup-x64.exe")
+    if not installer.is_file():
+        raise RuntimeError("Inno Setup did not create the expected installer.")
+    return installer
+
+
+def write_checksum(path: Path) -> Path:
+    with path.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    checksum = inside_workspace(path.with_name(path.name + ".sha256"))
+    checksum.write_text(f"{digest}  {path.name}\n", encoding="ascii")
+    return checksum
 
 
 def copy_licenses(destination: Path) -> None:
@@ -144,6 +195,8 @@ def build() -> Path:
     # QApplication and the multiprocessing worker both run inside the frozen app.
     subprocess.run([str(executable), "--self-test", str(smoke)], cwd=portable,
                    env=environment, check=True, timeout=180)
+    installer = compile_installer(portable, stage, version)
+    installer_checksum = write_checksum(installer)
     archive_name = f"SPD-Report-Generator-v{version}-windows-x64.zip"
     staged_zip = inside_workspace(stage / archive_name)
     with zipfile.ZipFile(staged_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
@@ -152,10 +205,7 @@ def build() -> Path:
                 raise ValueError("Portable artifacts must not contain symbolic links.")
             if path.is_file():
                 archive.write(path, Path(APP_NAME) / path.relative_to(portable))
-    with staged_zip.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    checksum = inside_workspace(stage / f"{archive_name}.sha256")
-    checksum.write_text(f"{digest}  {archive_name}\n", encoding="ascii")
+    checksum = write_checksum(staged_zip)
     final_portable = inside_workspace(release_root / APP_NAME)
     previous = inside_workspace(stage / "previous-release")
     if final_portable.exists():
@@ -168,11 +218,14 @@ def build() -> Path:
         raise
     os.replace(staged_zip, inside_workspace(release_root / archive_name))
     os.replace(checksum, inside_workspace(release_root / checksum.name))
+    os.replace(installer, inside_workspace(release_root / installer.name))
+    os.replace(installer_checksum, inside_workspace(release_root / installer_checksum.name))
     print(f"Portable folder: {final_portable}")
-    print(f"Release archive: {release_root / archive_name}")
-    print(f"SHA256: {digest}")
+    print(f"Release installer: {release_root / installer.name}")
+    print(f"Installer checksum: {release_root / installer_checksum.name}")
+    print(f"Internal portable archive: {release_root / archive_name}")
     print(f"Build diagnostics retained: {stage}")
-    return release_root / archive_name
+    return release_root / installer.name
 
 
 def main() -> None:
@@ -181,7 +234,7 @@ def main() -> None:
     arguments = parser.parse_args()
     if arguments.check:
         version, versions = preflight()
-        print(f"Build preflight passed: v{version}, {len(versions)} pinned distributions.")
+        print(f"Build preflight passed: v{version}, {len(versions)} pinned distributions, compiler: {find_iscc()}")
     else:
         build()
 

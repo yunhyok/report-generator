@@ -44,6 +44,8 @@ def needed_binary(entry):
         return name in {"qjpeg.dll", "qico.dll", "qgif.dll"}
     if "/plugins/platforms/" in destination:
         return name in {"qwindows.dll", "qoffscreen.dll"}
+    if "/plugins/platforminputcontexts/" in destination or "/plugins/iconengines/" in destination:
+        return False
     return True
 
 a.binaries = [entry for entry in a.binaries if needed_binary(entry)]
