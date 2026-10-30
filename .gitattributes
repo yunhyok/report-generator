@@ -1,2 +1,3 @@
 * text=auto eol=lf
 packaging/licenses/** -text -whitespace
+packaging/inno/** -text -whitespace
