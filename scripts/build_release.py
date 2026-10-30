@@ -78,6 +78,7 @@ def preflight() -> tuple[str, dict[str, str]]:
         versions[name] = actual
     required = (
         "LICENSE", "packaging/report-generator.spec", "packaging/installer.iss", "src/report_generator/docs/help.html",
+        "packaging/inno/Korean.isl", "packaging/licenses/InnoSetup/LICENSE.txt",
         "src/report_generator/docs/THIRD_PARTY_NOTICES.txt", "src/report_generator/selftest.py",
         "packaging/licenses/Qt/LGPL-3.0-only.txt", "packaging/licenses/Qt/GPL-3.0-only.txt",
         "packaging/licenses/openpyxl/LICENSE.txt", "packaging/licenses/et-xmlfile/LICENSE.txt",
@@ -88,9 +89,7 @@ def preflight() -> tuple[str, dict[str, str]]:
     python_license = Path(sys.base_prefix) / "LICENSE.txt"
     if not python_license.is_file():
         raise FileNotFoundError("The installed CPython LICENSE.txt is required.")
-    compiler = find_iscc()
-    if not (compiler.parent / "Languages/Korean.isl").is_file():
-        raise FileNotFoundError("The Inno Setup Korean language file is required.")
+    find_iscc()
     version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
     if not version or any(character not in "0123456789.abrc-" for character in version):
         raise ValueError("Unexpected release version.")

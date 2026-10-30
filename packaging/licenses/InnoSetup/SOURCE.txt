@@ -1,0 +1,10 @@
+Unmodified upstream files, Inno Setup is-6_7_1.
+
+Korean installer translation (retains translator attribution in the source):
+https://raw.githubusercontent.com/jrsoftware/issrc/is-6_7_1/Files/Languages/Korean.isl
+Stored in source at packaging/inno/Korean.isl.
+SHA256: cb56d6ea5c082bcf6b4acc1ae4c303ba91f662b1d0bfe05e4d3902c38c41e02a
+
+License:
+https://raw.githubusercontent.com/jrsoftware/issrc/is-6_7_1/license.txt
+SHA256: 2e5346868c2a18434489824e11d65c3031620f792fefc415d05f19cd441abf5c

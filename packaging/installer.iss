@@ -35,7 +35,7 @@ VersionInfoVersion={#AppVersion}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
+Name: "korean"; MessagesFile: "inno\Korean.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

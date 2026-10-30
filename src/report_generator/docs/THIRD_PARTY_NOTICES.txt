@@ -88,3 +88,8 @@ PyInstaller is a build tool; its full Python build environment is not shipped.
 
 This notice does not replace any component's full license. See licenses/ for
 copyright statements, conditions, disclaimers and third-party acknowledgments.
+
+The Windows installer is made with Inno Setup. Its Korean translation is retained
+from upstream is-6_7_1, including the translators' attribution comments.
+https://github.com/jrsoftware/issrc/tree/is-6_7_1
+Full license and source references: licenses/InnoSetup/.
