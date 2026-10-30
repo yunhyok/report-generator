@@ -47,6 +47,7 @@ def needed_binary(entry):
     return True
 
 a.binaries = [entry for entry in a.binaries if needed_binary(entry)]
+a.datas = [entry for entry in a.datas if "/mpl-data/sample_data/" not in entry[0].replace("\\", "/")]
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [],
