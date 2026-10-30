@@ -1,0 +1,57 @@
+name: Synthetic checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      build_portable:
+        description: Build and self-test a portable Windows archive (does not publish a release)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+      - name: Install pinned build and test dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Run synthetic tests
+        env:
+          PYTHONPATH: src
+          QT_QPA_PLATFORM: offscreen
+          MPLBACKEND: Agg
+          OPENBLAS_NUM_THREADS: '1'
+        run: python -m pytest -q
+
+  portable:
+    if: github.event_name == 'workflow_dispatch' && inputs.build_portable
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+      - run: python -m pip install -r requirements-build.txt
+      - run: python scripts/build_release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SPD-Report-Generator-windows-x64
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error

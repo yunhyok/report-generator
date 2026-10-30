@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>SPD Report Generator 0.1.0 · 사용 설명서</title>
+<style>
+:root{color-scheme:dark;--bg:#202226;--panel:#2b2e34;--inset:#1d2025;--text:#eceef1;--muted:#bdc5d0;--line:#626c7a;--accent:#8fc1ff}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:1rem}body{margin:0;background:var(--bg);color:var(--text);font:18px/1.8 "Segoe UI","Malgun Gothic",sans-serif;word-break:keep-all;overflow-wrap:anywhere}a{color:var(--accent);text-underline-offset:.2em}a:focus-visible{outline:3px solid var(--accent);outline-offset:4px}header,main,footer{max-width:1180px;margin:auto;padding:2rem}header{padding-bottom:1rem}h1{font-size:clamp(1.9rem,4vw,2.65rem);line-height:1.3;margin:.5rem 0 1rem}h2{font-size:1.65rem;line-height:1.4;margin:0 0 1rem}h3{font-size:1.2rem;margin:1.5rem 0 .5rem}p{margin:.7rem 0}strong{color:#fff}small,.muted{color:var(--muted)}.eyebrow{color:var(--accent);font-weight:600;letter-spacing:.04em}.layout{display:grid;grid-template-columns:235px minmax(0,1fr);gap:1.75rem}nav{align-self:start;position:sticky;top:1rem;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:1rem;font-size:1rem}nav p{margin:0 0 .5rem;font-weight:700}nav a{display:block;padding:.35rem 0}section{background:var(--panel);border:1px solid #505761;border-radius:7px;padding:1.7rem;margin-bottom:1.5rem}ul,ol{padding-left:1.5rem}li{margin:.5rem 0}.callout{border-left:4px solid var(--accent);background:var(--inset);padding:.8rem 1rem;margin:1rem 0}.table-wrap{overflow-x:auto;margin:1rem 0}table{border-collapse:collapse;width:100%;font-size:1rem}th,td{text-align:left;vertical-align:top;border:1px solid var(--line);padding:.7rem .8rem}th{background:#353a42;font-weight:700}code,kbd{background:var(--inset);border:1px solid #505761;border-radius:3px;padding:.1rem .35rem;font: .95em/1.6 Consolas,"Malgun Gothic",monospace}pre{white-space:pre-wrap;background:var(--inset);padding:1rem;border:1px solid var(--line);border-radius:4px;overflow:auto}pre code{padding:0;border:0}.formula{font-family:Consolas,"Malgun Gothic",monospace;background:var(--inset);padding:1rem;overflow-x:auto;white-space:nowrap}.skip{position:absolute;left:1rem;top:-5rem;padding:.5rem;background:var(--panel)}.skip:focus{top:1rem}footer{padding-top:0;color:var(--muted);font-size:1rem}.top-link{font-size:1rem}
+@media(max-width:850px){.layout{display:block}nav{position:static;margin-bottom:1.5rem}nav a{display:inline-block;margin-right:1rem}header,main,footer{padding:1.2rem}section{padding:1.2rem}body{font-size:18px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+@media print{:root{color-scheme:light;--bg:white;--panel:white;--inset:#f3f5f7;--text:#16181b;--muted:#40464e;--line:#a0a6ad;--accent:#184b82}body{font-size:11pt;line-height:1.65}header,main,footer{max-width:none;padding:0}.layout{display:block}nav,.skip,.top-link{display:none}section{border:0;border-top:1px solid #aaa;border-radius:0;padding:1rem 0;margin:0}h1{font-size:25pt}h2{font-size:18pt;break-after:avoid}h3{break-after:avoid}strong{color:inherit}th{background:#e8edf3}tr,.callout,.formula{break-inside:avoid}a{color:#184b82}table{font-size:10pt}.table-wrap{overflow:visible}code,kbd,pre{border-color:#c0c5cb}footer{margin-top:1rem}}
+</style>
+</head>
+<body id="top">
+<a class="skip" href="#quickstart">본문으로 건너뛰기</a>
+<header>
+<p class="eyebrow">SPD REPORT GENERATOR · v0.1.0</p>
+<h1>입력 파일에서 Excel 보고서까지</h1>
+<p>SPD의 부품·모델·배치, Touchstone의 임피던스, 직접 입력한 DCR을 조합해 보고서를 만듭니다. <strong>파일 처리는 이 PC에서 이루어지며 클라우드 업로드나 계정 연결이 필요하지 않습니다.</strong></p>
+<p class="muted">프로그램에서 <b>Help → 사용 설명서</b> 또는 <kbd>F1</kbd>로 이 문서를 엽니다. 인터넷 없이 읽거나 브라우저의 인쇄 기능으로 저장할 수 있습니다.</p>
+</header>
+<main class="layout">
+<nav aria-label="사용 설명서 목차">
+<p>작업 순서와 참고</p>
+<a href="#quickstart">1. 처음 실행하기</a>
+<a href="#inputs">2. 입력과 지원 범위</a>
+<a href="#mapping">3. 채널·그룹 연결</a>
+<a href="#capacitors">4. CAP 용량·활성 상태</a>
+<a href="#dcr">5. DCR 가져오기</a>
+<a href="#output">6. 미리보기·출력</a>
+<a href="#placement">7. 배치도 해석</a>
+<a href="#calculation">8. 계산식과 단위</a>
+<a href="#projects">9. 프로젝트 저장</a>
+<a href="#troubleshooting">10. 결과가 다를 때</a>
+</nav>
+<div>
+<section id="quickstart">
+<h2>1. 처음 실행하기</h2>
+<ol>
+<li>Windows x64용 <code>SPD-Report-Generator-v0.1.0-windows-x64.zip</code>을 내려받아 <strong>전체 압축을 해제</strong>합니다.</li>
+<li><code>SPD Report Generator</code> 폴더 안의 <code>SPD Report Generator.exe</code>를 실행합니다. Python을 별도로 설치할 필요는 없습니다. 실행 파일과 <code>_internal</code> 폴더를 함께 보관하세요.</li>
+<li><b>1 입력</b>에서 필요한 SPD·Touchstone 파일을 고르고 <b>파일 읽기</b>를 누릅니다. 제목, 제품명, 보드 종류와 작성일 등을 입력합니다.</li>
+<li><b>2 채널·그룹</b>에서 사용할 행을 고르고 Net·사이트·채널·SPD 포트를 확인합니다. 모호한 연결을 해결한 뒤 <b>확인</b>에 체크합니다.</li>
+<li>필요하면 <b>3 CAP·DCR</b>에서 용량을 수정하거나 DCR을 입력합니다.</li>
+<li><b>4 미리보기·출력 → 미리보기 갱신</b>으로 포함될 페이지를 살핀 뒤 <b>Excel 저장…</b>을 누릅니다.</li>
+</ol>
+<div class="callout">파일이 모두 있어야 시작할 수 있는 것은 아닙니다. SPD만으로 CAP 수량·배치도를, Touchstone만으로 임피던스 보고서를, DCR 입력만으로 DCR 표를 만들 수 있습니다.</div>
+<p>읽기와 출력 중에는 아래 진행 상태를 확인할 수 있습니다. 중단하려면 <b>취소</b>를 누릅니다. 파일을 새로 읽으면 자동 매핑을 다시 제안하고 CAP 수정값을 초기화하므로, 이어서 작업할 설정은 먼저 프로젝트로 저장하세요.</p>
+</section>
+<section id="inputs">
+<h2>2. 입력과 지원 범위</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">입력</th><th scope="col">사용하는 내용</th><th scope="col">확인할 점</th></tr></thead>
+<tbody>
+<tr><th scope="row">SPD</th><td>부품의 실제 모델 할당, Net, 활성 상태, 모델 주석의 명목 용량, 위치·회전·면·몸체 치수</td><td>부분 회로와 연결 정보가 있는 텍스트 SPD를 사용합니다. 원본을 수정하지 않고 읽습니다.</td></tr>
+<tr><th scope="row">Touchstone</th><td>다중 포트 S 행렬을 변환한 자기 임피던스 |Zii|</td><td>Touchstone <b>1.x, S 파라미터, RI·MA·DB</b>, 확장자 <code>.sNp</code>, 최대 <b>1024포트</b>를 지원합니다. 2.x 키워드·혼합 모드는 지원하지 않습니다.</td></tr>
+<tr><th scope="row">DCR</th><td>사이트·채널별 직류 저항 표</td><td>한 열 붙여넣기, <code>.xlsx</code> 범위 가져오기, 표 직접 입력이 가능합니다.</td></tr>
+</tbody></table></div>
+<p>Touchstone은 <code>#</code> 옵션 행, 0 이상의 중복 없는 오름차순 주파수, 완전한 주파수별 행렬이 필요합니다. 한 행 또는 한 주파수 기록은 64MiB 이하여야 합니다. 포트 수가 커지면 행렬 계산 시간도 늘어납니다.</p>
+<p>SPD의 UTF-8 또는 CP949 식별자를 읽으며, 해독할 수 없는 식별자를 다른 문자로 바꿔 연결하지 않습니다. 한 파일을 읽지 못해도 다른 입력이 유효하면 해당 데이터로 작업할 수 있습니다. 화면 아래 로그에서 오류와 제외 사유를 확인하세요.</p>
+<p><b>접지 Net (쉼표 구분)</b>에는 추가 접지 이름을 입력할 수 있습니다. 예: <code>GND, DGND, RETURN_A</code>. SPD에 정의된 접지와 함께 CAP의 전원–접지 연결을 판단합니다. Net 이름과 명시된 alias 관계를 사용하며 비슷한 이름을 임의로 합치지 않습니다.</p>
+</section>
+<section id="mapping">
+<h2>3. 채널·그룹 연결</h2>
+<p>자동 제안은 작업을 시작하기 위한 후보입니다. <strong>Touchstone 행렬의 포트 번호와 SPD의 포트 번호가 같다는 이유만으로 같은 연결이라고 판단하지 마세요.</strong> 이름이나 헤더의 포트 설명이 실제 추출 설정과 일치하는지 확인해야 합니다.</p>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">열</th><th scope="col">의미</th></tr></thead>
+<tbody>
+<tr><th scope="row">사용</th><td>이번 보고서에 사용할 행입니다. 제외할 단자는 체크를 해제합니다.</td></tr>
+<tr><th scope="row">요약</th><td><code>PI ALL@100MHz</code>와 <code>PI ALL</code> 요약에 포함합니다. 상세 그룹과 CAP 집계의 사용 여부는 <b>사용</b> 열로 결정합니다.</td></tr>
+<tr><th scope="row">확인</th><td>사용자가 연결을 검토했는지 표시합니다. 모호한 행은 확인 전 출력할 수 없습니다.</td></tr>
+<tr><th scope="row">번호 / 원본 포트</th><td>Touchstone의 행렬 포트 번호와 원본 설명입니다. SPD만 사용할 때 번호는 비어 있을 수 있습니다.</td></tr>
+<tr><th scope="row">SPD 포트 / Net</th><td>연결할 SPD 포트의 전체 이름과 대상 전원 Net입니다. 알려진 SPD 포트 이름을 입력하면 Net이 채워집니다.</td></tr>
+<tr><th scope="row">사이트 / 채널</th><td>예: <code>SITE2</code> / <code>POWER_A</code>. 같은 사이트·채널에는 사용할 단자를 하나만 선택합니다.</td></tr>
+<tr><th scope="row">그룹</th><td>같은 이름의 행을 한 상세 그래프에 겹쳐 표시합니다. <strong>빈 그룹은 상세 그래프를 제외</strong>합니다. 사용·요약 체크가 켜져 있으면 요약 표에는 남습니다.</td></tr>
+<tr><th scope="row">Priority / 상태</th><td>Priority는 보고서에 표시하는 사용자 메모입니다. 자동 합격 판정이나 정렬 규칙이 아닙니다. 상태에는 자동 제안·중복·원본 변경 등의 사유가 나옵니다.</td></tr>
+</tbody></table></div>
+<h3>같은 사이트·채널에 단자가 여러 개라면</h3>
+<p>예를 들어 <code>SITE2 / POWER_A</code>에 부하 측과 공급 측 포트가 모두 있으면 두 후보를 유지하고 확인을 요청합니다. 평균을 내거나 둘 중 하나를 자동으로 버리지 않습니다.</p>
+<ol>
+<li>검색란에 사이트나 채널 이름을 입력해 후보를 좁힙니다.</li>
+<li>원본 포트·SPD 포트·Net을 비교하고, 사용하지 않을 행의 <b>사용</b> 체크를 해제합니다. <b>검색 결과 사용 / 검색 결과 제외</b>는 현재 보이는 행에 적용됩니다. 검색만으로 행이 제외되는 것은 아닙니다.</li>
+<li>남길 행의 Net·사이트·채널을 수정하고 <b>확인</b>에 체크하거나, 행을 선택한 뒤 <b>선택 행 확인</b>을 누릅니다.</li>
+<li>필요한 행을 선택해 그룹명을 입력하고 <b>그룹 적용</b>을 누릅니다. 그룹명을 비워 적용하면 해당 상세 그래프에서 빠집니다.</li>
+</ol>
+<p>행을 고르는 것과 <b>사용</b> 체크는 별개입니다. 여러 행은 <kbd>Ctrl</kbd> 또는 <kbd>Shift</kbd>로 선택할 수 있습니다. <b>채널 추가</b>로 직접 행을 만들고 <b>선택 행 삭제</b>로 지울 수 있습니다. 같은 Touchstone 포트를 여러 행에서 사용하거나 사이트·채널을 중복 선택하면 출력 전에 수정해야 합니다.</p>
+</section>
+<section id="capacitors">
+<h2>4. CAP 용량과 활성 상태</h2>
+<p><b>3 CAP·DCR → CAP</b>에서 이름과 모델 주석의 판독값을 나란히 확인합니다. 부품이 실제로 할당받은 모델을 따라가며, 모델에 들어 있는 개별 SPICE C 소자의 값을 명목 용량으로 더하거나 대체하지 않습니다. 등가회로 내부 C 값은 제품의 명목 용량과 다를 수 있습니다.</p>
+<h3>용량 적용 순서</h3>
+<ol>
+<li><b>부품별 수정</b>의 해당 RefDes 개별 수정값</li>
+<li><b>모델별 일괄 수정</b>의 모델 수정값</li>
+<li>할당된 모델 주석의 명목 용량: <code>Property : C = …</code>, 없으면 Description의 용량</li>
+<li>모델 이름에서 읽은 용량</li>
+</ol>
+<p>예를 들어 이름은 <code>CAP_220N</code>인데 명목 주석은 <code>2.2[uF]</code>이면 두 근거와 충돌을 표시합니다. 자동값은 주석을 우선하며, 실제 의도를 확인한 뒤 <code>220 nF</code> 또는 <code>2.2 uF</code>처럼 수정합니다. 수정 칸을 비우면 그 단계의 수정값만 지워지고 다음 순서의 값이 적용됩니다.</p>
+<p><b>부품별 수정</b>은 검색 결과 중 최대 500개를 표시합니다. RefDes 또는 모델로 검색해 대상을 좁히세요.</p>
+<h3>수량에 들어가는 부품</h3>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">상태</th><th scope="col">활성 CAP 집계</th></tr></thead>
+<tbody>
+<tr><th scope="row">Enabled</th><td>포함합니다. 용량을 모르면 별도 미확인 항목으로 남깁니다.</td></tr>
+<tr><th scope="row">Automatic</th><td>할당된 모델이 비어 있지 않고 현재 판독기가 유효하게 읽을 수 있을 때 포함합니다.</td></tr>
+<tr><th scope="row">Disabled / Unknown</th><td>제외합니다. 알 수 없는 활성 플래그를 Enabled로 추정하지 않습니다.</td></tr>
+<tr><th scope="row">Automatic + NULL·빈 모델·유효하지 않은 모델</th><td>제외합니다. 용량 수정만으로 부품의 활성 상태가 바뀌지는 않습니다.</td></tr>
+</tbody></table></div>
+<p>선택한 채널의 전원–접지에 연결된 활성 CAP를 사이트·채널별로 집계합니다. 명시된 alias로 이어지는 Net도 확인하며, 같은 채널에 동일 RefDes를 중복 집계하지 않습니다. 용량 미확인은 0F로 바꾸지 않고 <b>Unknown</b> 항목으로 분리합니다.</p>
+<div class="callout">현재 판독기는 완전한 SPICE 시뮬레이터가 아닙니다. R·L·C 값이 파라미터 식 등 보수적으로 해석할 수 없는 형태이면 Automatic 모델을 유효하지 않은 것으로 취급할 수 있습니다. 모델 근거와 제외 수를 확인하세요. 프로그램은 원본 SPD의 활성 플래그를 수정하지 않습니다.</div>
+</section>
+<section id="dcr">
+<h2>5. DCR 가져오기와 직접 입력</h2>
+<p>DCR 표의 표시·저장 단위는 항상 <strong>mΩ</strong>입니다. 가져올 숫자의 원래 단위를 먼저 선택합니다: <code>mΩ</code>, <code>Ω</code>, <code>µΩ</code>. 예를 들어 입력 단위 Ω에서 <code>0.003</code>을 가져오면 표에는 <code>3</code>mΩ가 됩니다. 음수, 빈 셀, 숫자가 아닌 값은 사용할 수 없습니다.</p>
+<h3>한 열을 채널에 순서대로 연결하기</h3>
+<ol>
+<li><b>2 채널·그룹</b>에서 DCR을 대응시킬 사이트·채널 행을 추가하고 <b>사용</b>을 체크합니다.</li>
+<li><b>3 CAP·DCR → DCR</b>에서 입력 단위와 <b>사이트 → 채널</b> 또는 <b>채널 → 사이트</b> 순서를 고릅니다.</li>
+<li>숫자만 있는 한 열을 복사해 <b>한 열 붙여넣기</b>를 누르거나, <b>Excel 범위 가져오기</b>에서 파일·시트·범위를 고릅니다. 예: <code>B3:B6</code>. 사각 범위는 위 행부터 왼쪽→오른쪽으로 읽으므로 한 열을 권장합니다.</li>
+<li><b>DCR 대상과 순서 확인</b> 창에서 사이트·채널·변환된 mΩ 값을 확인합니다. 개수가 다르면 가져오지 않습니다.</li>
+<li>확정하면 기존 DCR 표를 새 값으로 <strong>교체</strong>합니다. 아래 표에서 각 값을 다시 수정할 수 있습니다.</li>
+</ol>
+<p>대상은 <b>사용</b> 체크된 사이트·채널의 중복을 제거한 목록이며, 화면 행 순서가 아니라 숫자를 고려한 이름 순서로 정렬합니다.</p>
+<div class="table-wrap"><table>
+<caption>가상 예: 사이트 2개, 채널 2개, 가져올 값 4개</caption>
+<thead><tr><th scope="col">선택 순서</th><th scope="col">값이 대응하는 대상</th></tr></thead>
+<tbody><tr><th scope="row">사이트 → 채널</th><td>SITE2/POWER_A → SITE2/POWER_B → SITE3/POWER_A → SITE3/POWER_B</td></tr><tr><th scope="row">채널 → 사이트</th><td>SITE2/POWER_A → SITE3/POWER_A → SITE2/POWER_B → SITE3/POWER_B</td></tr></tbody></table></div>
+<p>Excel 수식 셀은 저장된 계산 결과를 읽습니다. Excel에서 먼저 계산하고 저장하세요. 머리글이나 빈 칸은 범위에서 제외합니다.</p>
+<h3>SPD·Touchstone 없이 DCR만 만들기</h3>
+<p><b>파일 읽기</b>를 생략하고 DCR의 <b>행 추가</b>로 사이트·채널·DCR(mΩ)을 직접 입력하면 됩니다. 같은 사이트·채널의 DCR은 하나만 둘 수 있습니다. 한 열 가져오기를 쓰려면 먼저 <b>채널 추가</b>로 대응할 사이트·채널을 만든 다음 위 절차를 따릅니다. <b>선택 행 삭제</b>는 선택한 DCR 행을 지웁니다.</p>
+</section>
+<section id="output">
+<h2>6. 미리보기와 Excel·PNG 저장</h2>
+<p><b>미리보기 갱신</b>은 현재 설정으로 표와 그림을 다시 만듭니다. 설정을 바꿨다면 다시 갱신하세요. 선택 목록에서 <b>그림 · …</b> 또는 <b>표 · …</b>를 고릅니다. 표 미리보기는 앞 40행·최대 40열이며, 전체 데이터는 저장한 Excel에서 확인합니다.</p>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">페이지</th><th scope="col">생성 조건·내용</th></tr></thead>
+<tbody>
+<tr><th scope="row">PI ALL@100MHz</th><td>사용·요약 체크된 포트에 유효한 100MHz 값이 있을 때. 사이트별 값, MAX, AVG, 편차를 표시합니다.</td></tr>
+<tr><th scope="row">PI ALL</th><td>요약 대상의 기준 주파수 중 유효한 값이 있을 때. 100kHz·1MHz·10MHz·100MHz·1GHz의 |Zii|를 표시합니다.</td></tr>
+<tr><th scope="row">DCR</th><td>유효한 DCR 입력이 있을 때.</td></tr>
+<tr><th scope="row">CAP_수량</th><td>선택한 채널에 집계할 활성 CAP가 있을 때. 용량·사이트·채널별 수량입니다.</td></tr>
+<tr><th scope="row">CAP_배치도면</th><td>좌표가 있는 부품이 있을 때. MLO Top, PCB Top·Bottom을 지원합니다.</td></tr>
+<tr><th scope="row">그룹별 상세</th><td>그룹명이 있고 유효한 Touchstone 데이터가 있을 때. 선택한 곡선과 기준 주파수 표를 함께 표시합니다.</td></tr>
+</tbody></table></div>
+<p>데이터가 없는 페이지는 만들지 않으며, 아래 로그에 <b>제외 · 페이지명: 사유</b>가 표시됩니다. 부분 보고서는 정상 동작입니다. 빈 페이지를 성공한 결과처럼 채우지 않습니다. 모든 페이지에 유효한 데이터가 없으면 입력을 보완해야 합니다.</p>
+<p><b>Excel 저장…</b>으로 <code>.xlsx</code>를 저장합니다. <b>현재 그림 저장…</b>은 목록에서 선택한 그림을 PNG로 저장합니다. 표가 선택되어 있다면 먼저 그림 항목을 고르세요. PNG에는 미리보기 위젯의 화면 크기가 아니라 생성된 원본 그림이 저장됩니다.</p>
+</section>
+<section id="placement">
+<h2>7. 배치도 읽는 방법</h2>
+<p>배치도는 SPD의 부품 좌표·회전·면과 Part 몸체 치수를 사용합니다. 선택한 Net의 활성 CAP는 용량별 색으로, 비활성 CAP와 다른 부품은 회색 계열로 구분합니다. 미확인 용량은 별도 색을 사용하므로 그림의 범례를 함께 보세요.</p>
+<ul>
+<li>몸체 치수가 없으면 위치 마커로 표시합니다. 이름이나 패키지 숫자로 몸체 크기를 만들어 넣지 않습니다.</li>
+<li>좌표가 없는 부품은 그림에서 생략합니다. 이는 CAP 수량에서 빠진다는 뜻은 아닙니다.</li>
+<li>정확한 보드 외곽선이 없으면 부품 배치만 표시합니다. 동박 다각형이나 부품 범위를 실제 보드 경계로 단정하지 않습니다.</li>
+<li><b>1 입력 → Bottom 방향</b>의 체크를 켜면 Bottom을 하면에서 본 방향으로 좌우 반전합니다. 끄면 SPD 좌표 방향을 유지합니다. 도면 비교 시 같은 관찰 방향인지 확인하세요.</li>
+</ul>
+<p>배치도는 부품 위치를 설명하는 그림이며 전체 동박·배선·패드 형상을 재현하는 PCB CAD 뷰어는 아닙니다.</p>
+</section>
+<section id="calculation">
+<h2>8. 임피던스 계산과 보고서 단위</h2>
+<p>각 주파수에서 <b>전체 S 행렬</b>을 먼저 Z 행렬로 변환합니다. 포트 사이 결합을 포함하므로 다중 포트에서 Sii만 떼어 1포트 식을 적용하지 않습니다.</p>
+<div class="formula" role="math" aria-label="Z 행렬은 기준 저항 R 곱하기 I 빼기 S의 역행렬 곱하기 I 더하기 S">Z = R · (I − S)<sup>−1</sup> · (I + S)</div>
+<ul>
+<li><b>S</b>: 해당 주파수의 복소 S 파라미터 행렬. RI는 실수부·허수부, MA는 크기·각도(도), DB는 20log<sub>10</sub> 크기·각도(도)로 복원합니다.</li>
+<li><b>I</b>: 포트 수와 같은 크기의 단위행렬.</li>
+<li><b>R</b>: Touchstone 옵션 행의 공통 기준 저항(Ω). 양의 실수 하나를 모든 포트에 적용합니다. 생략 시 50Ω입니다. 포트별로 다른 기준 임피던스·복소 기준 임피던스는 지원하지 않습니다.</li>
+<li><b>Zii</b>: 변환된 Z 행렬의 i번째 대각 성분. 다른 포트의 전류가 0인 Z 파라미터 정의에 따른 자기 임피던스입니다.</li>
+<li><b>|Zii|</b>: √(Re(Zii)<sup>2</sup> + Im(Zii)<sup>2</sup>). 보고서 표·그래프에 표시하는 값입니다.</li>
+</ul>
+<p>가상 1포트 예에서 R=50Ω, S=0.5이면 Z=50×(1+0.5)/(1−0.5)=150Ω입니다. 여러 포트에서는 위의 행렬식을 사용합니다. 행렬이 특이하거나 계산 결과가 유한하지 않으면 해당 주파수의 값을 생략하고 경고합니다.</p>
+<h3>기준 주파수의 값</h3>
+<p>표의 기준점은 100kHz, 1MHz, 10MHz, 100MHz, 1GHz입니다. 정확한 표본이 있으면 그 복소 Zii의 크기를 사용합니다. 없으면 양옆 표본 사이에서 <strong>주파수에 대해 복소 Zii를 선형 보간한 뒤 크기</strong>를 구합니다. 로그 주파수나 |Z| 크기만을 보간하는 방식이 아닙니다.</p>
+<p>보간된 표 값은 숫자 뒤에 <b>*</b>를 붙입니다. 그래프는 1kHz~1GHz 범위의 유효한 입력 표본을 표시하며, 0Hz는 로그 축에서 제외합니다.</p>
+<div class="formula">t = (f − f₁) / (f₂ − f₁)<br>Zii(f) = Zii(f₁) + t · [Zii(f₂) − Zii(f₁)]</div>
+<p>입력 주파수 범위 밖은 외삽하지 않고 빈 셀로 둡니다. 양옆 값 중 하나가 유효하지 않아도 빈 셀입니다. 로그 그래프에는 양의 주파수·양의 유효 크기만 표시합니다.</p>
+<h3>단위와 100MHz 통계</h3>
+<p>임피던스 표·그래프는 <b>MLO: mΩ</b>, <b>PCB: Ω</b>입니다. DCR은 보드 종류와 무관하게 mΩ입니다. 보드 종류를 바꿀 때 비교하는 숫자의 단위도 확인하세요.</p>
+<p><b>MAX</b>는 채널별 유효한 사이트 값의 최댓값, <b>AVG</b>는 그 값들의 산술평균, <b>편차</b>는 <code>(MAX − AVG) / AVG</code>입니다. 빈 사이트는 평균에서 제외하며 AVG가 0이면 편차는 공란입니다. Priority나 별도 목표값에 따른 합격·불합격 판정은 하지 않습니다.</p>
+</section>
+<section id="projects">
+<h2>9. 프로젝트 저장과 원본 변경 확인</h2>
+<p><b>파일 → 프로젝트 저장…</b> 또는 <kbd>Ctrl</kbd>+<kbd>S</kbd>로 <code>.report.json</code>을 저장합니다. 보고서 설정, 연결·그룹·확인 상태, CAP 수정값, DCR 표, 입력 파일 경로와 서명을 보관합니다. 원본 SPD·Touchstone이나 계산 결과 전체를 프로젝트 안에 복사하지 않습니다.</p>
+<p><b>프로젝트 열기…</b>는 <kbd>Ctrl</kbd>+<kbd>O</kbd>, <b>새 프로젝트</b>는 <kbd>Ctrl</kbd>+<kbd>N</kbd>입니다. 다른 PC로 옮길 때는 입력 파일도 함께 준비하고 경로를 확인하세요.</p>
+<p>원본 서명은 <b>파일 크기와 수정 시각</b>입니다. 열 때 원본이 없거나 서명이 바뀌면 매핑을 다시 확인하도록 합니다. 읽는 중·출력 전에 변경을 발견한 경우에도 파일을 다시 읽고 연결을 확인해야 합니다. 서명은 내용 전체의 암호학적 해시는 아닙니다.</p>
+<p>다른 입력 파일로 교체하거나 변경된 원본의 프로젝트를 열면 이전 DCR 값을 비웁니다. 새 입력에 맞는 DCR을 다시 가져오세요. 가져온 DCR Excel 원본에는 보고서를 덮어쓸 수 없습니다.</p>
+</section>
+<section id="troubleshooting">
+<h2>10. 결과가 예상과 다를 때</h2>
+<h3>사용할 단자를 확인하라는 메시지</h3>
+<p><b>2 채널·그룹</b>에서 같은 사이트·채널의 중복 후보를 검색하세요. 남길 단자를 하나 선택하고 다른 행의 사용을 해제한 뒤 확인합니다. 표시 순서나 포트 번호만으로 단자를 선택하지 마세요.</p>
+<h3>기존 보고서와 CAP 용량·수량이 다름</h3>
+<p>원본 설계·모델 할당의 Revision, Disabled 포함 여부, NULL·빈 모델 여부와 수동 수정값을 비교하세요. 예를 들어 과거 보고서는 220nF로 적혀 있어도 현재 할당 모델 주석이 2.2uF일 수 있습니다. 프로그램은 기존 보고서의 숫자에 맞추려고 현재 원본 값을 바꾸지 않습니다. 의도한 명목 용량을 확인한 뒤 수정값을 적용하세요.</p>
+<h3>PI 표가 비거나 일부 페이지가 없음</h3>
+<p>Touchstone을 읽었는지, 사용·요약·확인이 켜져 있는지, 기준 주파수가 입력 범위에 들어가는지 확인합니다. 상세 그래프는 그룹명도 필요합니다. 하단 로그에 포함·제외 페이지와 계산 실패 사유가 표시됩니다.</p>
+<h3>DCR 개수가 맞지 않음</h3>
+<p>사용 체크된 사이트·채널 수와 숫자 셀 개수를 비교합니다. 머리글·빈 칸을 빼고 순서를 고른 뒤, 대응 확인 창의 각 행을 검토하세요. 기존 DCR에 덧붙이는 작업이 아니라 전체 교체입니다.</p>
+<h3>저장할 수 없음</h3>
+<p>대상 Excel 파일이 다른 프로그램에서 열려 있는지, 폴더에 저장할 수 있는지 확인합니다. 입력 파일을 출력 경로로 선택하지 마세요. 입력과 연결을 수정했다면 미리보기를 다시 갱신한 뒤 저장하세요.</p>
+<p class="top-link"><a href="#top">문서 처음으로 ↑</a></p>
+</section>
+</div>
+</main>
+<footer><p>SPD Report Generator v0.1.0 · Copyright © 2026 yunhyok · MIT License<br>사용한 라이브러리의 라이선스는 동봉된 <a href="THIRD_PARTY_NOTICES.txt">THIRD_PARTY_NOTICES.txt</a>를 참고하세요.</p></footer>
+</body>
+</html>

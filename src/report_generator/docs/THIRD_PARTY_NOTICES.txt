@@ -1,0 +1,90 @@
+SPD Report Generator — Third-party notices
+==========================================
+
+The application source is licensed under the MIT license in the accompanying
+LICENSE file. Third-party components retain their own copyrights and licenses.
+The portable distribution includes their complete installed license files in
+licenses/, and the exact build versions in BUILD_MANIFEST.json. The list below
+identifies the pinned v0.1.0 Windows build; additional notices inside the copied
+license files apply to bundled native libraries and fonts.
+
+Python 3.12.10 — Python Software Foundation License and incorporated notices.
+Source: https://www.python.org/downloads/release/python-31210/
+Full notices: licenses/Python/LICENSE.txt
+
+PySide6 Essentials / Shiboken6 / Qt 6.11.0
+----------------------------------------
+Copyright (C) The Qt Company Ltd. and other contributors.
+This application uses the LGPL version 3 option for the QtCore, QtGui,
+QtWidgets, PySide6 and Shiboken6 libraries. These libraries are unmodified
+upstream binary distributions, dynamically loaded from the portable folder.
+Their use and distribution are covered by the GNU Lesser General Public License
+version 3. The full LGPL v3 and the incorporated GPL v3 text are provided in
+licenses/Qt/LGPL-3.0-only.txt and licenses/Qt/GPL-3.0-only.txt.
+
+You may modify the LGPL-covered libraries and reverse engineer this application
+for the purpose of debugging such modifications. No application term restricts
+those rights. Keep a backup, then replace the interface-compatible PySide6,
+Shiboken6 or Qt DLL/PYD files under _internal/PySide6 and _internal/shiboken6
+with matching modified builds. Preserve filenames, Python 3.12 ABI and Windows
+x64 architecture. The program does not check signatures or hashes of these
+libraries. The application source and packaging recipe are available from the
+same public source release as the executable, permitting a rebuild if needed.
+
+Corresponding upstream source and build instructions:
+https://code.qt.io/pyside/pyside-setup.git/?h=v6.11.0
+https://github.com/pyside/pyside-setup/tree/v6.11.0
+https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.11.0-src/
+https://code.qt.io/qt/qtbase.git/?h=v6.11.0
+https://download.qt.io/official_releases/qt/6.11/6.11.0/submodules/
+https://doc.qt.io/qtforpython-6.11/building_from_source/index.html
+
+Qt contains third-party code with its own notices. The licenses/Qt/qtbase/
+directory conservatively preserves upstream v6.11.0 attribution records,
+referenced full license files and the Qt LICENSES directory. Some retained
+notices describe components that are not shipped. These notices do not imply
+that optional Qt modules are included. QtWebEngine, QtQml, QtQuick and QtNetwork
+are not used by this application.
+
+Other runtime components
+------------------------
+NumPy 2.4.4 — BSD-3-Clause and incorporated BSD/MIT/Zlib/public-domain notices.
+https://numpy.org/ ; https://github.com/numpy/numpy/tree/v2.4.4
+Includes native numerical libraries whose notices accompany NumPy's LICENSE.
+
+Pillow 12.2.0 — MIT-CMU and incorporated native-library notices.
+https://python-pillow.github.io/ ; https://github.com/python-pillow/Pillow
+The installed full LICENSE includes its bundled codec and font-library notices.
+
+Matplotlib 3.10.9 — Matplotlib license and incorporated font/library notices.
+https://matplotlib.org/ ; https://github.com/matplotlib/matplotlib
+This product includes software developed by the Matplotlib Development Team.
+This product uses the FreeType Project (https://freetype.org/).
+Bundled DejaVu/STIX font notices are retained; Malgun Gothic is obtained from
+the user's Windows installation and is not redistributed with this program.
+
+openpyxl 3.1.5 — MIT; et_xmlfile 2.0.0 — MIT.
+https://foss.heptapod.net/openpyxl/openpyxl
+https://foss.heptapod.net/openpyxl/et_xmlfile
+Full licenses were retrieved from the official PyPI source distributions.
+The source archive URL, extracted filename and verified SHA256 are recorded
+under licenses/openpyxl/ and licenses/et-xmlfile/.
+
+ContourPy 1.3.3 — BSD-3-Clause: https://github.com/contourpy/contourpy
+cycler 0.12.1 — BSD-3-Clause: https://github.com/matplotlib/cycler
+fonttools 4.62.1 — MIT and incorporated notices: https://github.com/fonttools/fonttools
+kiwisolver 1.5.0 — BSD-3-Clause: https://github.com/nucleic/kiwi
+packaging 26.2 — Apache-2.0 OR BSD-2-Clause: https://github.com/pypa/packaging
+pyparsing 3.3.2 — MIT: https://github.com/pyparsing/pyparsing
+python-dateutil 2.9.0.post0 — Apache-2.0 OR BSD-3-Clause:
+https://github.com/dateutil/dateutil
+six 1.17.0 — MIT: https://github.com/benjaminp/six
+
+PyInstaller 6.20.0 bootloader — GPL-2.0-or-later with its distribution exception.
+https://pyinstaller.org/ ; https://github.com/pyinstaller/pyinstaller/tree/v6.20.0
+The PyInstaller exception permits distribution of generated applications under
+their chosen licenses. Its full COPYING.txt is included in licenses/PyInstaller/.
+PyInstaller is a build tool; its full Python build environment is not shipped.
+
+This notice does not replace any component's full license. See licenses/ for
+copyright statements, conditions, disclaimers and third-party acknowledgments.
