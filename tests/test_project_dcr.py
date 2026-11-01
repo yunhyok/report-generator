@@ -1,4 +1,4 @@
-from pathlib import Path
+import json
 
 import pytest
 
@@ -18,6 +18,25 @@ def test_project_roundtrip_and_changed_source(tmp_path):
     source.write_text("changed synthetic")
     restored, _, _, changed = load_project(project)
     assert changed == ["spd"] and not restored.mappings[0].confirmed
+
+
+def test_existing_projects_keep_ranks_but_explicitly_disabled_ranks_stay_off(tmp_path):
+    path = tmp_path / "priority.report.json"
+    config = ReportConfig(mappings=[ChannelMapping(site="A", channel="MAIN", priority="2")])
+    save_project(path, config, {})
+    assert not load_project(path)[0].settings.use_priority
+    legacy = json.loads(path.read_text(encoding="utf-8"))
+    del legacy["config"]["settings"]["use_priority"]
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+    restored = load_project(path)[0]
+    assert restored.settings.use_priority and restored.mappings[0].priority == "2"
+    legacy["config"]["mappings"][0]["priority"] = ""
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+    assert not load_project(path)[0].settings.use_priority
+    legacy["config"]["settings"]["use_priority"] = "false"
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+    with pytest.raises(ValueError, match="사용 여부"):
+        load_project(path)
 
 
 def test_dcr_order_units_and_count():

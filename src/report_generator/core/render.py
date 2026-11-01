@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from math import ceil, cos, radians, sin
+from collections import Counter, defaultdict
+from math import cos, radians, sin
 from pathlib import Path
 
 import numpy as np
@@ -17,8 +17,8 @@ from .models import ReportConfig, SpdData, TouchstoneData
 from .capacitance import component_active, format_capacitance, resolved_capacitance
 
 
-FONT = FontProperties(family="Malgun Gothic", size=11)
-TITLE_FONT = FontProperties(family="Malgun Gothic", size=24)
+FONT = FontProperties(family="Malgun Gothic", size=15)
+TITLE_FONT = FontProperties(family="Malgun Gothic", size=26)
 COLORS = ["#2474b5", "#d95f02", "#168653", "#9857aa", "#bc3143", "#876441",
           "#d85f9c", "#53747b", "#928500", "#16a1a5", "#6067ba", "#b87524"]
 CAP_COLORS_MLO = {100e-9: "#ff0000", 1e-6: "#92d050", 4.7e-6: "#3767ff"}
@@ -52,9 +52,13 @@ def _finish(fig: Figure, output_path: str | Path) -> str:
     return str(path)
 
 
-def _axes_font(ax) -> None:
-    for text in [*ax.get_xticklabels(), *ax.get_yticklabels(), ax.xaxis.label, ax.yaxis.label]:
+def _axes_font(ax, pcb=False) -> None:
+    for text in ax.get_yticklabels():
         text.set_fontproperties(FONT)
+    for text in ax.get_xticklabels():
+        text.set_fontproperties(FontProperties(family="Malgun Gothic", size=9 if pcb else 15))
+    ax.xaxis.label.set_fontproperties(FontProperties(family="Malgun Gothic", size=9 if pcb else 14.5))
+    ax.yaxis.label.set_fontproperties(FontProperties(family="Malgun Gothic", size=14))
 
 
 def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
@@ -66,10 +70,7 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
         raise ValueError("그룹에 선택한 Touchstone 포트가 없습니다.")
     channels = list(dict.fromkeys(m.channel for m in mappings))
     sites = list(dict.fromkeys(m.site for m in mappings))
-    legend_rows = ceil(len(mappings) / min(6, len(mappings)))
-    legend_height = legend_rows * .19 + .15
-    height = 5.4 + legend_height
-    fig = Figure(figsize=(12, height), dpi=110, facecolor="white")
+    fig = Figure(figsize=(12, 5.4), dpi=110, facecolor="white")
     ax = fig.add_subplot(111, facecolor="white")
     unit = "Ω" if config.settings.board_type.upper() == "PCB" else "mΩ"
     factor = 1 if unit == "Ω" else 1000
@@ -107,14 +108,8 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
     ax.set_ylabel(f"|Zii| [{unit}]")
     ax.grid(True, which="major", color="#d8d8d8", linewidth=.7)
     ax.grid(True, which="minor", color="#eeeeee", linewidth=.4)
-    _axes_font(ax)
-    handles, labels = ax.get_legend_handles_labels()
-    legend = fig.legend(handles, labels, loc="lower center", ncol=min(6, plotted),
-                        prop=FontProperties(family="Malgun Gothic", size=9),
-                        frameon=False, bbox_to_anchor=(.5, .01))
-    for text in legend.get_texts():
-        text.set_parse_math(False)
-    fig.tight_layout(rect=(0, legend_height / height, 1, 1))
+    _axes_font(ax, pcb=config.settings.board_type.upper() == "PCB")
+    fig.tight_layout()
     return _finish(fig, outputpath)
 
 
@@ -130,9 +125,9 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
         raise ValueError(f"{side} 면에 표시할 부품 좌표가 없습니다.")
     def highlighted(c):
         return c.is_cap and (not nets or bool(nets.intersection(c.nets)))
-    values = {resolved_capacitance(c, spd, config) for c in components
-              if highlighted(c) and component_active(c, spd)}
-    known = sorted(v for v in values if v is not None)
+    counts = Counter(resolved_capacitance(c, spd, config) for c in components
+                     if highlighted(c) and component_active(c, spd))
+    known = sorted(v for v in counts if v is not None)
     reference_colors = CAP_COLORS_PCB if config.settings.board_type.upper() == "PCB" else CAP_COLORS_MLO
     palette = {value: next((color for nominal, color in reference_colors.items() if np.isclose(value, nominal, rtol=1e-6, atol=0)),
                            COLORS[i % len(COLORS)]) for i, value in enumerate(known)}
@@ -230,7 +225,7 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
     ax.set_axis_off()
     fig.text(.025, .97, f"{side.upper()}" + (" · mirrored" if mirror else ""),
              fontproperties=FontProperties(family="Malgun Gothic", size=16), color="white", va="top")
-    handles = [Line2D([], [], color=color, marker="s", linestyle="none", label=format_capacitance(v))
+    handles = [Line2D([], [], color=color, marker="s", linestyle="none", label=f"{format_capacitance(v)} ({counts[v]})")
                for v, color in palette.items()]
     if inactive:
         handles.append(Line2D([], [], color="#777777", marker="s", markerfacecolor="none", linestyle="none", label=f"Inactive ({inactive})"))
@@ -239,23 +234,12 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
     if missing_size:
         handles.append(Line2D([], [], color="#eeeeee", marker="x", linestyle="none", label=f"Unknown dimensions ({missing_size})"))
     if context:
-        handles.append(Line2D([], [], color="#b8b8b8", marker="s", markerfacecolor="none", linestyle="none", label=f"Other components / nets ({context})"))
+        handles.append(Line2D([], [], color="#b8b8b8", marker="s", markerfacecolor="none", linestyle="none", label="Other components / nets"))
     if fallback_bounds:
         handles.append(Line2D([], [], color="#999999", linestyle="dashed", label=f"Pin bounds ({len(fallback_bounds)})"))
-    notes = []
-    if not outline_segments:
-        notes.append("Board outline unavailable; component coordinates only.")
-    omitted = sum(c.side.capitalize() == side and not any(p.side == side for p in c.pads) and
-                  (c.x_mm is None or c.y_mm is None or not np.isfinite(c.x_mm) or not np.isfinite(c.y_mm))
-                  for c in spd.components)
-    if omitted:
-        notes.append(f"{omitted} components omitted: coordinates unavailable.")
-    if not nets:
-        notes.append("All capacitor nets shown; no selected net mapping.")
     if handles:
         fig.legend(handles=handles, loc="lower center", ncol=2 if width < 8 else 3,
                    prop=FontProperties(family="Malgun Gothic", size=10),
                    labelcolor="#eeeeee", frameon=False, bbox_to_anchor=(.5, .045))
-    fig.text(.025, .012, "\n".join(notes), fontproperties=FontProperties(family="Malgun Gothic", size=8), color="#b8b8b8")
     fig.subplots_adjust(left=.015, right=.985, bottom=.18, top=.94)
     return _finish(fig, outputpath)

@@ -203,3 +203,31 @@ def test_wrapper_help_never_starts_qt(tmp_path):
     completed = subprocess.run([sys.executable, "scripts/validate_reports.py", "--help"], cwd=Path(__file__).resolve().parents[1], env=environment, capture_output=True, text=True, timeout=30)
     assert completed.returncode == 0
     assert "--validate-project" in completed.stdout
+
+
+def test_reference_tables_keep_channels_after_rank_section_breaks(tmp_path):
+    from openpyxl import Workbook
+    book = Workbook()
+    pi = book.active
+    pi.title = "PI ALL"
+    for coordinate, value in {"B4":"Priority", "C4":"Channel / [mΩ]", "D4":"SITE",
+                              "E4":"100MHz", "B5":1, "C5":"MAIN", "D5":0, "E5":20,
+                              "B7":"SITE0", "C7":"AUX", "D7":0, "E7":30}.items():
+        pi[coordinate] = value
+    sheet = book.create_sheet("PI ALL@100MHz")
+    for coordinate, value in {"B4":"Priority", "C4":"Channel / [mΩ]", "D4":"SITE0",
+                              "B5":1, "C5":"MAIN", "D5":20,
+                              "B7":"SITE0", "C7":"AUX", "D7":30}.items():
+        sheet[coordinate] = value
+    detail = book.create_sheet("Wide group")
+    for coordinate, value in {"P4":"Priority", "S4":1, "P5":"CHANNEL_A / [Ω]",
+                              "P6":"SITE", "Q6":"100MHz", "P7":0, "Q7":2}.items():
+        detail[coordinate] = value
+    path = tmp_path/"reference.xlsx"
+    book.save(path)
+    book.close()
+    values, _ = inspect_workbook(path, {"SITE0"})
+    assert values["PI_DETAIL"]["CHANNEL_A", "SITE0", "100MHz"]["value"] == 2
+    for kind in ("PI", "PI100"):
+        assert values[kind]["AUX", "SITE0", "100MHz"]["value"] == pytest.approx(.03)
+        assert values[kind]["MAIN", "SITE0", "100MHz"]["value"] == pytest.approx(.02)

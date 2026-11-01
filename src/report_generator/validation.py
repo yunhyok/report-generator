@@ -75,7 +75,7 @@ def _pi_tables(sheet):
             if not frequencies:
                 continue
             above = sheet.cell(row - 1, col).value if row > 1 else None
-            fixed = above.split(" / [", 1)[0].strip() if isinstance(above, str) and " / [" in above and not above.upper().startswith("CHANNEL") else None
+            fixed = above.split(" / [", 1)[0].strip() if isinstance(above, str) and " / [" in above else None
             channel_col = next((c.column for c in reversed(header[:col - 1]) if isinstance(c.value, str) and c.value.upper().startswith("CHANNEL")), None)
             if not fixed and channel_col is None:
                 continue
@@ -85,6 +85,10 @@ def _pi_tables(sheet):
             channel = fixed
             for r in range(row + 1, sheet.max_row + 1):
                 raw_site = sheet.cell(r, col).value
+                if raw_site is None and not fixed:
+                    # A blank row separates ranked channels from the next customer section.
+                    channel = None
+                    continue
                 if raw_site is None or str(raw_site).upper() == "SITE":
                     break
                 if not fixed and isinstance(sheet.cell(r, channel_col).value, str):
@@ -102,8 +106,15 @@ def _matrix_tables(sheet, cap=False, site_names=()):
         sites = [(c.column, _site(c.value)) for c in row if isinstance(c.value, str) and
                  (re.fullmatch(r"SITE\d+", c.value, re.I) or _site(c.value) in site_names)]
         if sites:
-            channel = next((c.column for c in row if isinstance(c.value, str) and c.value.upper().startswith("CHANNEL")), sites[0][0] - 1)
-            headers.append((row[0].row, sites, channel))
+            channel = next((c.column for c in row if isinstance(c.value, str) and
+                            re.match(r"^CHANNEL(?:\s*/|$)", c.value, re.I)), None)
+            if channel is None and cap and row[0].row > 1 and sites[0][0] > 1:
+                # The CAP channel heading is merged across its two header rows.
+                left = sites[0][0] - 1
+                if str(sheet.cell(row[0].row - 1, left).value).upper() == "CHANNEL":
+                    channel = left
+            if channel is not None:
+                headers.append((row[0].row, sites, channel))
     for index, (row, sites, col) in enumerate(headers):
         label = sheet.cell(row, col).value
         nominal = None

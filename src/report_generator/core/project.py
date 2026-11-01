@@ -11,6 +11,8 @@ from .models import ChannelMapping, DcrRow, ReportConfig, ReportSettings, source
 
 
 def validate_config(config: ReportConfig) -> None:
+    if not isinstance(config.settings.use_priority, bool):
+        raise ValueError("채널 순위 사용 여부를 확인하세요.")
     if not isinstance(config.dcr_source_path, str):
         raise ValueError("DCR 원본 파일 경로가 올바르지 않습니다.")
     if config.settings.board_type not in ("MLO", "PCB"):
@@ -74,6 +76,8 @@ def load_project(path: str | Path) -> tuple[ReportConfig, dict[str, str], dict, 
                 raise ValueError("채널 선택 상태가 올바르지 않습니다.")
             if row.port_index is not None and (type(row.port_index) is not int or row.port_index < 1):
                 raise ValueError("포트 번호가 올바르지 않습니다.")
+        if "use_priority" not in raw["settings"]:
+            config.settings.use_priority = any(row.selected and row.priority.strip() for row in config.mappings)
         validate_config(config)
         sources = data.get("sources", {})
         if not isinstance(sources, dict) or any(k not in ("spd", "touchstone") or not isinstance(v, str) for k, v in sources.items()):

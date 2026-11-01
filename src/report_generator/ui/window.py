@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from .. import __version__
 from ..core.dcr import assign_column, parse_column, read_range
+from ..core.mapping import priority_value
 from ..core.models import ChannelMapping, DcrRow, ReportConfig, ReportSettings
 from ..core.project import load_project, save_project, validate_config
 from ..jobs import JobRunner
@@ -55,6 +56,110 @@ def button(label, callback, primary=False):
     control.setProperty("primary", primary)
     control.clicked.connect(callback)
     return control
+
+
+class PriorityDialog(QDialog):
+    def __init__(self, priorities: dict[str, list[str]], enabled: bool, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("채널 순위 설정")
+        available = QApplication.primaryScreen().availableGeometry()
+        self.resize(min(660, available.width() - 40), min(480, available.height() - 80))
+        self.setMinimumSize(380, 280)
+        self.priorities = {}
+        layout = QVBoxLayout(self)
+        self.enabled = QCheckBox("PI·CAP 표에 채널 우선순위 사용")
+        self.enabled.setChecked(enabled)
+        layout.addWidget(self.enabled)
+        note = QLabel("순위는 1, 2처럼 입력합니다. 같은 순위도 가능합니다. 구분명 예: 보조 전원. 빈칸은 미순위입니다. 그래프 그룹과 무관하며, 같은 채널의 모든 사이트에 적용합니다.")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        self.table = make_table(["사용 채널", "순위 또는 구분명", "기존 값 확인"])
+        self.table.setRowCount(len(priorities))
+        self.table.setColumnWidth(0, 190)
+        self.table.setColumnWidth(1, 150)
+        for row, (channel, raw_values) in enumerate(priorities.items()):
+            raw_values = list(dict.fromkeys(raw_values))
+            normalized = []
+            invalid = False
+            for value in raw_values:
+                try:
+                    parsed = priority_value(value)
+                    normalized.append("" if parsed is None else str(parsed))
+                except ValueError:
+                    normalized.append(value)
+                    invalid = True
+            conflict = len(set(normalized)) > 1
+            self.table.setItem(row, 0, text_item(channel, False))
+            item = text_item("" if conflict else normalized[0])
+            item.setData(Qt.ItemDataRole.UserRole, conflict)
+            self.table.setItem(row, 1, item)
+            evidence = " / ".join(value or "(빈칸)" for value in raw_values)
+            state = text_item("사이트별 값 다름" if conflict else "수정 필요" if invalid else "기존 입력값", False)
+            state.setToolTip(evidence)
+            item.setToolTip(evidence if conflict else "양의 정수 · 구분명 · 빈칸 중 하나")
+            self.table.setItem(row, 2, state)
+        self.table.itemChanged.connect(self.rank_edited)
+        self.table.setEnabled(enabled)
+        layout.addWidget(self.table, 1)
+        self.clear_button = button("선택 채널 비우기", self.clear_selected)
+        self.clear_button.setEnabled(enabled)
+        layout.addWidget(self.clear_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.error_label = QLabel()
+        self.error_label.setWordWrap(True)
+        self.error_label.setStyleSheet("color: #8fc1ff;")
+        layout.addWidget(self.error_label)
+        preservation = QLabel("사용을 끄면 기존 순위·구분명은 그대로 보관하며 PI·CAP 표에 적용하지 않습니다.")
+        preservation.setWordWrap(True)
+        preservation.setProperty("muted", True)
+        layout.addWidget(preservation)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("적용")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setProperty("primary", True)
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("취소")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.enabled.toggled.connect(self.table.setEnabled)
+        self.enabled.toggled.connect(self.clear_button.setEnabled)
+        self.enabled.toggled.connect(lambda _: self.error_label.clear())
+
+    def rank_edited(self, item):
+        if item.column() == 1:
+            with QSignalBlocker(self.table):
+                item.setData(Qt.ItemDataRole.UserRole, False)
+                self.table.item(item.row(), 2).setText("입력 수정됨")
+            self.error_label.clear()
+
+    def clear_selected(self):
+        for row in {index.row() for index in self.table.selectionModel().selectedRows()}:
+            with QSignalBlocker(self.table):
+                item = self.table.item(row, 1)
+                item.setText("")
+                item.setData(Qt.ItemDataRole.UserRole, False)
+                self.table.item(row, 2).setText("미순위")
+        self.error_label.clear()
+
+    def accept(self):
+        if self.enabled.isChecked():
+            if not self.table.rowCount():
+                self.error_label.setText("사용할 채널을 먼저 선택하세요. 우선순위 없이 진행하려면 사용을 끄세요.")
+                return
+            priorities = {}
+            for row in range(self.table.rowCount()):
+                item = self.table.item(row, 1)
+                channel = self.table.item(row, 0).text()
+                try:
+                    if item.data(Qt.ItemDataRole.UserRole):
+                        raise ValueError("사이트별 값이 다릅니다. 하나를 입력하거나 선택 채널 비우기를 누르세요.")
+                    value = priority_value(item.text())
+                    priorities[channel] = "" if value is None else str(value)
+                except ValueError as exc:
+                    self.error_label.setText(f"{channel}: {exc}")
+                    self.table.setCurrentCell(row, 1)
+                    self.table.scrollToItem(item)
+                    return
+            self.priorities = priorities
+        super().accept()
 
 
 class MainWindow(QMainWindow):
@@ -158,7 +263,7 @@ class MainWindow(QMainWindow):
         for label, widget in (("제목", self.title_input), ("제품명", self.product_input), ("보드 종류", self.board_type), ("작성일", self.date_input), ("Revision", self.revision_input), ("접지 Net (쉼표 구분)", self.ground_input), ("Bottom 방향", self.mirror)):
             form.addRow(label, widget)
         layout.addLayout(form)
-        self.input_summary = QLabel("파일이 없어도 채널·그룹에서 채널을 추가한 뒤 DCR 레포트를 만들 수 있습니다.")
+        self.input_summary = QLabel("파일 읽기 → 채널·그룹 확인 → (선택) 채널 순위 설정 → 미리보기·Excel 저장. 파일 없이 DCR만 입력할 때는 채널을 추가하세요.")
         self.input_summary.setWordWrap(True)
         layout.addWidget(self.input_summary)
         layout.addStretch()
@@ -167,9 +272,18 @@ class MainWindow(QMainWindow):
     def mapping_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        note = QLabel("사용할 포트를 선택하고 사이트·채널·Net을 확인하세요. 그룹이 같으면 한 그래프에 겹쳐 표시합니다. 빈 그룹은 상세 그래프를 제외합니다.")
+        note = QLabel("사용 포트 확인 → 그룹 지정 → (선택) 채널 우선순위 → 미리보기. 같은 그룹은 한 그래프에 표시하며, 빈 그룹은 상세 그래프를 제외합니다.")
         note.setWordWrap(True)
         layout.addWidget(note)
+        row = QHBoxLayout()
+        self.priority_button = button("채널 순위 설정…", self.edit_priorities)
+        self.priority_status = QLabel()
+        self.priority_status.setWordWrap(True)
+        self.priority_status.setProperty("muted", True)
+        row.addWidget(self.priority_button)
+        row.addWidget(self.priority_status, 1)
+        layout.addLayout(row)
+        self.update_priority_status()
         row = QHBoxLayout()
         self.map_filter = QLineEdit()
         self.map_filter.setPlaceholderText("포트·Net·사이트·채널 검색")
@@ -188,6 +302,7 @@ class MainWindow(QMainWindow):
         row.addWidget(button("그룹 적용", self.apply_group))
         layout.addLayout(row)
         self.mapping_table = make_table(["사용", "요약", "확인", "번호", "원본 포트", "SPD 포트", "Net", "사이트", "채널", "그룹", "Priority", "상태"])
+        self.mapping_table.setColumnHidden(10, True)
         for index in range(4):
             self.mapping_table.setColumnWidth(index, 55)
         for index in (4, 5, 6, 8, 9):
@@ -202,7 +317,7 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
         cap = QWidget()
         cap_layout = QVBoxLayout(cap)
-        label = QLabel("Enabled와 유효 모델이 있는 Automatic을 집계합니다. Disabled는 제외합니다. 수정값 예: 100 nF, 4.7 uF. 빈 수정값은 자동 판독으로 되돌립니다.")
+        label = QLabel("Automatic·Enabled를 집계하고 Disabled는 제외합니다. 용량은 공칭 주석 → 모델 이름 순으로 읽으며, 미확인 항목도 별도 표시합니다. 수정 예: 100 nF, 4.7 uF (빈칸: 자동 판독).")
         label.setWordWrap(True)
         cap_layout.addWidget(label)
         self.cap_tabs = QTabWidget()
@@ -306,7 +421,7 @@ class MainWindow(QMainWindow):
 
     def collect_config(self, *, dcr=None):
         config = self.config if dcr is None else replace(self.config, dcr=dcr)
-        config.settings = ReportSettings(self.title_input.text().strip(), self.product_input.text().strip(), self.board_type.currentText(), self.date_input.text().strip(), self.revision_input.text().strip(), self.mirror.isChecked(), [n.strip() for n in self.ground_input.text().split(",") if n.strip()])
+        config.settings = ReportSettings(self.title_input.text().strip(), self.product_input.text().strip(), self.board_type.currentText(), self.date_input.text().strip(), self.revision_input.text().strip(), self.mirror.isChecked(), [n.strip() for n in self.ground_input.text().split(",") if n.strip()], use_priority=self.config.settings.use_priority)
         rows = []
         for row in range(self.mapping_table.rowCount()):
             text = lambda col: self.mapping_table.item(row, col).text().strip()
@@ -334,9 +449,42 @@ class MainWindow(QMainWindow):
                 self.mapping_table.setItem(row, col, check_item(value))
             values = (mapping.port_index, mapping.source_name, mapping.spd_port, mapping.net, mapping.site, mapping.channel, mapping.group, mapping.priority, mapping.status)
             for col, value in enumerate(values, 3):
-                self.mapping_table.setItem(row, col, text_item(value, col not in (3, 4, 11)))
+                self.mapping_table.setItem(row, col, text_item(value, col not in (3, 4, 10, 11)))
         self.loading_table = False
         self.filter_mapping()
+        self.update_priority_status()
+
+    def update_priority_status(self):
+        self.priority_status.setText("PI·CAP 우선순위 사용 중 · 그래프 그룹과 별도" if self.config.settings.use_priority else "PI·CAP 우선순위 사용 안 함 · 기존 입력값 보관")
+
+    def edit_priorities(self):
+        channels = {}
+        for row in range(self.mapping_table.rowCount()):
+            channel = self.mapping_table.item(row, 8).text().strip()
+            if channel and self.mapping_table.item(row, 0).checkState() == Qt.CheckState.Checked:
+                channels.setdefault(channel.casefold(), channel)
+        priorities = {channel: [] for channel in channels.values()}
+        for row in range(self.mapping_table.rowCount()):
+            key = self.mapping_table.item(row, 8).text().strip().casefold()
+            if key in channels:
+                priorities[channels[key]].append(self.mapping_table.item(row, 10).text().strip())
+        dialog = PriorityDialog(priorities, self.config.settings.use_priority, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        changed = self.config.settings.use_priority != dialog.enabled.isChecked()
+        self.config.settings.use_priority = dialog.enabled.isChecked()
+        if self.config.settings.use_priority:
+            by_channel = {channel.casefold(): rank for channel, rank in dialog.priorities.items()}
+            with QSignalBlocker(self.mapping_table):
+                for row in range(self.mapping_table.rowCount()):
+                    channel = self.mapping_table.item(row, 8).text().strip().casefold()
+                    if channel in by_channel:
+                        changed |= self.mapping_table.item(row, 10).text() != by_channel[channel]
+                        self.mapping_table.item(row, 10).setText(by_channel[channel])
+        self.update_priority_status()
+        if changed:
+            self.clear_preview()
+            self.status.setText("채널 우선순위 설정을 저장했습니다. 미리보기를 갱신하세요.")
 
     def mapping_edited(self, item):
         if self.loading_table:
@@ -682,6 +830,7 @@ class MainWindow(QMainWindow):
         self.revision_input.setText(settings.revision)
         self.ground_input.setText(", ".join(settings.ground_nets))
         self.mirror.setChecked(settings.bottom_mirror)
+        self.update_priority_status()
 
     def save_project(self):
         if self.runner.busy:

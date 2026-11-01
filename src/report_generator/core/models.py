@@ -139,6 +139,7 @@ class ReportSettings:
     revision: str = ""
     bottom_mirror: bool = True
     ground_nets: list[str] = field(default_factory=lambda: ["GND", "DGND"])
+    use_priority: bool = False
 
 
 @dataclass

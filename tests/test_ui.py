@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 from PySide6.QtCore import Qt
 
 from report_generator.core.models import ChannelMapping, Component, DcrRow, Port, ReportConfig, SpiceModel, SpdData
-from report_generator.ui.window import MainWindow
+from report_generator.ui.window import MainWindow, PriorityDialog
 
 
 @pytest.fixture(scope="module")
@@ -234,3 +234,173 @@ def test_large_progress_and_process_start_recovery(app, monkeypatch):
     with pytest.raises(OSError):
         runner.start("load", {})
     assert not runner.busy
+
+
+def test_optional_priority_propagates_per_channel_without_changing_mappings_or_dcr(window, monkeypatch):
+    window.config.mappings = [
+        ChannelMapping(site="SITE0", channel="RAIL_A", priority="2", group="Graph", status="기존 상태"),
+        ChannelMapping(site="SITE1", channel="RAIL_A", priority="2", confirmed=False),
+        ChannelMapping(site="SITE0", channel="RAIL_A", priority="9", selected=False),
+        ChannelMapping(site="SITE0", channel="RAIL_B"),
+        ChannelMapping(site="SITE0", channel="RAIL_C", priority="7", selected=False),
+    ]
+    window.config.dcr = [DcrRow("SITE0", "RAIL_A", 3.2)]
+    window.config.model_overrides = {"CAP_100N": 1e-7}
+    old_dcr = window.config.dcr
+    window.fill_mappings()
+    window.fill_dcr()
+    confirmations = [window.mapping_table.item(row, 2).checkState() for row in range(5)]
+
+    def prepare(dialog):
+        assert [dialog.table.item(row, 0).text() for row in range(2)] == ["RAIL_A", "RAIL_B"]
+        assert dialog.table.item(0, 1).data(Qt.ItemDataRole.UserRole)
+        dialog.enabled.setChecked(True)
+        dialog.table.item(0, 1).setText("1")
+        dialog.table.item(1, 1).setText("1")
+        dialog.accept()
+        return dialog.result()
+
+    monkeypatch.setattr(PriorityDialog, "exec", prepare)
+    window.edit_priorities()
+    assert window.config.settings.use_priority
+    assert [window.mapping_table.item(row, 10).text() for row in range(5)] == ["1", "1", "1", "1", "7"]
+    assert [window.mapping_table.item(row, 2).checkState() for row in range(5)] == confirmations
+    assert window.mapping_table.item(0, 11).text() == "기존 상태"
+    assert window.mapping_table.item(0, 9).text() == "Graph"
+    assert window.config.dcr is old_dcr
+    assert window.config.model_overrides == {"CAP_100N": 1e-7}
+    assert window.dcr_table.item(0, 2).text() == "3.2"
+    assert window.mapping_table.isColumnHidden(10)
+    assert not window.mapping_table.item(0, 10).flags() & Qt.ItemFlag.ItemIsEditable
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_priority_skip_or_cancel_preserves_existing_drafts(window, monkeypatch, cancel):
+    window.config.settings.use_priority = True
+    window.config.mappings = [ChannelMapping(site="SITE0", channel="RAIL", priority="0"),
+                              ChannelMapping(site="SITE1", channel="RAIL", priority="2")]
+    window.fill_mappings()
+
+    def skip(dialog):
+        dialog.enabled.setChecked(True)
+        dialog.table.item(0, 1).setText("8")
+        if cancel:
+            dialog.reject()
+        else:
+            dialog.enabled.setChecked(False)
+            dialog.accept()
+        return dialog.result()
+
+    monkeypatch.setattr(PriorityDialog, "exec", skip)
+    window.edit_priorities()
+    assert window.config.settings.use_priority == cancel
+    assert [window.mapping_table.item(row, 10).text() for row in range(2)] == ["0", "2"]
+
+
+def test_priority_dialog_repairs_conflicts_invalid_numbers_and_named_sections(app):
+    dialog = PriorityDialog({"RAIL_A": ["1", "2"], "RAIL_B": ["0"], "RAIL_C": [""]}, True)
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Rejected
+    assert "사이트별" in dialog.error_label.text()
+    dialog.table.item(0, 1).setText("보조 전원")
+    for invalid in ("0", "-1", "1.5"):
+        dialog.table.item(1, 1).setText(invalid)
+        dialog.accept()
+        assert dialog.result() == QDialog.DialogCode.Rejected
+        assert "RAIL_B" in dialog.error_label.text()
+    dialog.table.item(1, 1).setText("01")
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert dialog.priorities == {"RAIL_A": "보조 전원", "RAIL_B": "1", "RAIL_C": ""}
+    dialog.deleteLater()
+
+
+def test_priority_conflict_can_be_explicitly_cleared(app):
+    dialog = PriorityDialog({"RAIL": ["1", "2"]}, True)
+    dialog.table.selectRow(0)
+    dialog.clear_selected()
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert dialog.priorities == {"RAIL": ""}
+    dialog.deleteLater()
+
+
+def test_skipping_disabled_priority_preserves_existing_preview(window, monkeypatch):
+    window.config.mappings = [ChannelMapping(site="SITE0", channel="RAIL", priority="2")]
+    window.fill_mappings()
+    seed_preview(window)
+
+    def skip(dialog):
+        assert not dialog.enabled.isChecked()
+        dialog.accept()
+        return dialog.result()
+
+    monkeypatch.setattr(PriorityDialog, "exec", skip)
+    window.edit_priorities()
+    assert not window.config.settings.use_priority
+    assert window.mapping_table.item(0, 10).text() == "2"
+    assert window.preview_book == "old-preview.xlsx"
+
+
+def test_priority_state_save_open_new_and_same_source_reload(window, monkeypatch, tmp_path):
+    window.config.settings.use_priority = True
+    window.config.mappings = [ChannelMapping(site="SITE0", channel="RAIL", priority="2")]
+    window.fill_mappings()
+    path = tmp_path / "priority.report.json"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **kw: (str(path), ""))
+    assert window.save_project()
+    window.new_project()
+    assert not window.config.settings.use_priority
+    assert "사용 안 함" in window.priority_status.text()
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: (str(path), ""))
+    window.open_project()
+    assert window.config.settings.use_priority
+    assert "사용 중" in window.priority_status.text()
+    assert window.mapping_table.item(0, 10).text() == "2"
+    source = SpdData("same.spd", {"size": 1, "mtime_ns": 1})
+    window.spd = source
+    window.action = "load"
+    window.on_finished((source, None, [], []))
+    assert window.config.settings.use_priority
+    assert window.mapping_table.item(0, 10).text() == "2"
+    assert window.collect_config().settings.use_priority
+
+
+def test_priority_editor_can_open_with_invalid_old_dcr_and_correct_legacy_rank(window, monkeypatch):
+    window.config.settings.use_priority = True
+    window.config.mappings = [ChannelMapping(site="SITE0", channel="RAIL", priority="-1")]
+    window.fill_mappings()
+    window.add_dcr()
+    old_dcr_text = [window.dcr_table.item(0, col).text() for col in range(3)]
+
+    def repair(dialog):
+        dialog.table.item(0, 1).setText("3")
+        dialog.accept()
+        return dialog.result()
+
+    monkeypatch.setattr(PriorityDialog, "exec", repair)
+    window.edit_priorities()
+    assert window.mapping_table.item(0, 10).text() == "3"
+    assert [window.dcr_table.item(0, col).text() for col in range(3)] == old_dcr_text
+
+
+def test_priority_entry_and_dialog_fit_small_window(window, app):
+    from PySide6.QtGui import QFont
+    window.resize(720, 460)
+    window.tabs.setCurrentIndex(1)
+    window.show()
+    app.processEvents()
+    assert window.height() == 460
+    assert window.priority_button.isVisible()
+    assert window.priority_button.text() == "채널 순위 설정…"
+    assert window.mapping_table.height() >= 70
+    assert window.priority_button.geometry().bottom() < window.mapping_table.geometry().top()
+    dialog = PriorityDialog({f"RAIL_{index}": [""] for index in range(100)}, False, window)
+    dialog.setFont(QFont("Malgun Gothic", 13))
+    dialog.resize(440, 400)
+    dialog.show()
+    app.processEvents()
+    assert dialog.table.height() >= 70
+    assert dialog.table.verticalScrollBar().maximum() > 0
+    assert dialog.table.geometry().bottom() < dialog.clear_button.geometry().top()
+    dialog.reject()

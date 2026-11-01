@@ -56,10 +56,7 @@ def resolved_capacitance(component: Component, spd: SpdData, config: ReportConfi
 
 
 def component_active(component: Component, spd: SpdData) -> bool:
-    if component.status == "Enabled":
-        return True
-    model = spd.models.get(component.model_name)
-    return component.status == "Automatic" and model is not None and model.valid
+    return component.status in ("Automatic", "Enabled")
 
 
 def summarize_caps(spd: SpdData, config: ReportConfig) -> list[dict]:

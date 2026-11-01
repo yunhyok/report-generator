@@ -16,6 +16,7 @@ def data():
     config = ReportConfig(mappings=[
         ChannelMapping(1, site="0", channel="VDD", net="VDD_0", group="VDD"),
         ChannelMapping(2, site="1", channel="VDD", net="VDD_1", group="VDD")])
+    config.settings.use_priority = True
     return config, ts
 
 
@@ -65,6 +66,7 @@ def test_dcr_only_and_literal_formula_strings(tmp_path):
     assert w["DCR"]["C5"].data_type == "s"
     assert w["DCR"]["C5"].value == "=SUM(1,2)"
     assert w["DCR"]["D5"].value == 12.5
+    assert w["DCR"]["A3"].value is None
     assert not any(isinstance(c.value, str) and c.value.startswith("주의:") for row in w["DCR"] for c in row)
     assert result.warnings == spd.warnings
     w.close()
@@ -115,14 +117,14 @@ def test_caps_active_override_and_placement(tmp_path):
     result = build_report(config, spd, None, tmp_path / "caps.xlsx")
     assert result.sheets == ["CAP_수량", "CAP_배치도면"]
     w = openpyxl.load_workbook(result.path)
-    assert w["CAP_수량"]["D4"].value == "1uF"
-    assert w["CAP_수량"]["D6"].value == 1
-    assert w["CAP_수량"]["D8"].value == "Unknown"
-    assert w["CAP_수량"]["D10"].value == 1
-    assert "C4:C5" in w["CAP_수량"].merged_cells
+    assert w["CAP_수량"]["C4"].value == "1uF"
+    assert w["CAP_수량"]["C6"].value == 1
+    assert w["CAP_수량"]["C8"].value == "Unknown"
+    assert w["CAP_수량"]["C10"].value == 1
+    assert "B4:B5" in w["CAP_수량"].merged_cells
     assert len(w["CAP_배치도면"]._images) == 1
     cap_notes = " ".join(str(c.value) for row in w["CAP_수량"] for c in row if c.value is not None)
-    assert "Model nominal requires review." in cap_notes and "Board outline unavailable." not in cap_notes
+    assert "Model nominal requires review." not in cap_notes and "Board outline unavailable." not in cap_notes
     assert "외곽선" not in cap_notes
     assert result.warnings == spd.warnings
     w.close()
@@ -276,5 +278,107 @@ def test_missing_site_and_channel_values_remain_visible(tmp_path):
         assert summary["C6"].value == "UNAVAILABLE"
         assert summary["E6"].value is None
         assert book["PI ALL"]["C6"].value == "UNAVAILABLE"
+    finally:
+        book.close()
+
+
+def priority_data(site_count):
+    names = ["Unnamed", "Third", "AuxA", "FirstB", "FirstA", "AuxB", "Other"]
+    ranks = ["", "10", "Auxiliary", "2", "2", "Auxiliary", "Other group"]
+    mappings = [ChannelMapping(index + 1, site=f"SITE{site}", channel=names[channel],
+                               net=f"N{index}", priority=ranks[channel], group="Overlay")
+                for index, (channel, site) in enumerate((c, s) for c in range(len(names)) for s in range(site_count))]
+    config = ReportConfig(mappings=mappings,
+        dcr=[DcrRow(m.site, m.channel, index + .25) for index, m in enumerate(mappings)])
+    config.settings.board_type = "PCB"
+    config.settings.product = "Synthetic metadata"
+    values = np.array([[(frequency + 1) * (site + 1) * (channel + 1)
+                        for channel in range(len(names)) for site in range(site_count)] for frequency in range(5)], dtype=complex)
+    ts = TouchstoneData("synthetic.sNp", {}, [Port(i + 1, f"P{i + 1}") for i in range(len(mappings))],
+                        np.array(FREQUENCIES), values, warnings=["Synthetic conversion warning"])
+    spd = SpdData("synthetic.spd", {}, models={"cap": SpiceModel("cap", 1e-7, valid=True)},
+                  components=[Component(f"C{i}", "cap", [f"N{i}", "GND"], is_cap=True) for i in range(len(mappings))],
+                  warnings=["Synthetic model warning"])
+    return config, spd, ts
+
+
+def dcr_snapshot(sheet):
+    return ([(c.coordinate, c.value, c.number_format, c.font.name, c.font.sz, c.font.bold)
+             for row in sheet for c in row if c.value is not None],
+            str(sheet.merged_cells), {key: value.width for key, value in sheet.column_dimensions.items()})
+
+
+def test_priority_sections_optional_notes_removed_and_dcr_unchanged(tmp_path):
+    config, spd, ts = priority_data(2)
+    disabled = build_report(config, spd, ts, tmp_path / "off.xlsx")
+    config.settings.use_priority = True
+    enabled = build_report(config, spd, ts, tmp_path / "on.xlsx")
+    off = openpyxl.load_workbook(disabled.path)
+    on = openpyxl.load_workbook(enabled.path)
+    try:
+        for book in (off, on):
+            for sheet in book:
+                assert sheet["A3"].value is None
+                assert sheet.freeze_panes is None
+                assert not any(isinstance(c.value, str) and any(term in c.value for term in
+                    ("Synthetic metadata", "Synthetic model warning", "Synthetic conversion warning", "주의:", "보간값", "활성 부품만 집계"))
+                    for row in sheet for c in row)
+        assert off["PI ALL@100MHz"]["B4"].value.startswith("Channel")
+        assert [off["PI ALL@100MHz"].cell(r, 2).value for r in range(5, 12)] == [m.channel for m in config.mappings[::2]]
+        assert all(c.value != "Priority" for name in ("PI ALL@100MHz", "PI ALL", "CAP_수량", "Overlay") for row in off[name] for c in row)
+        summary = on["PI ALL@100MHz"]
+        assert [summary.cell(r, 3).value for r in (5, 6, 7, 9, 10, 12, 14)] == ["FirstB", "FirstA", "Third", "AuxA", "AuxB", "Other", "Unnamed"]
+        assert [summary.cell(r, 2).value for r in (5, 6, 7)] == [2, 2, 10]
+        assert all(summary.cell(8, c).value is None for c in range(2, 9))
+        assert summary["B9"].value == "Auxiliary" and "B9:B10" in summary.merged_cells
+        assert summary["F5"].value == pytest.approx(1 / 3)
+        assert summary["G5"].value == 32 and summary["H5"].value == 24
+        assert on["PI ALL"]["C5"].value == "FirstB" and on["PI ALL"]["C12"].value == "AuxA"
+        assert on["PI ALL"]["J5"].value == pytest.approx(1 / 3)
+        assert on["CAP_수량"]["C6"].value == "FirstB" and on["CAP_수량"]["B10"].value == "Auxiliary"
+        assert on["Overlay"]["Q5"].value == "FirstB" and on["Overlay"]["Q12"].value == "AuxA"
+        assert dcr_snapshot(off["DCR"]) == dcr_snapshot(on["DCR"])
+        assert disabled.warnings == enabled.warnings == [*spd.warnings, *ts.warnings]
+    finally:
+        off.close()
+        on.close()
+
+
+def test_wide_priority_bands_preserve_raw_channel_identity_and_every_site(tmp_path):
+    from report_generator.validation import inspect_workbook
+    config, spd, ts = priority_data(9)
+    config.settings.use_priority = True
+    result = build_report(config, spd, ts, tmp_path / "wide-priority.xlsx")
+    book = openpyxl.load_workbook(result.path)
+    try:
+        pi = book["PI ALL"]
+        assert pi["B4"].value == "Priority" and pi["E4"].value == 2
+        assert [pi.cell(5, col).value for col in (2, 9, 16)] == ["FirstB / [Ω]", "FirstA / [Ω]", "Third / [Ω]"]
+        assert pi["B18"].value == "Auxiliary"
+        assert pi["B19"].value == "AuxA / [Ω]" and pi["I19"].value == "AuxB / [Ω]"
+        assert pi["B46"].value == "Unnamed / [Ω]"
+        assert pi["H7"].value == pytest.approx(.8)
+        assert book["CAP_수량"]["B4"].value == "Priority"
+        assert book["CAP_수량"]["C6"].font.sz == 12
+    finally:
+        book.close()
+    actual, _ = inspect_workbook(result.path)
+    expected = {(mapping.channel, mapping.site, frequency) for mapping in config.mappings for frequency in
+                ("100kHz", "1MHz", "10MHz", "100MHz", "1GHz")}
+    assert set(actual["PI"]) == expected
+    assert set(actual["PI_DETAIL"]) == expected
+    assert len(actual["PI100"]) == len(actual["CAP"]) == len(actual["DCR"]) == 63
+
+
+def test_single_named_group_has_no_needless_leading_gap(tmp_path):
+    config, ts = data()
+    for mapping in config.mappings:
+        mapping.priority = "Auxiliary"
+    result = build_report(config, None, ts, tmp_path / "single.xlsx")
+    book = openpyxl.load_workbook(result.path)
+    try:
+        assert book["PI ALL@100MHz"]["C5"].value == "VDD"
+        assert book["PI ALL@100MHz"]["B5"].value == "Auxiliary"
+        assert book["VDD"]["Q5"].value == "VDD" and book["VDD"]["Q6"].value == "VDD"
     finally:
         book.close()

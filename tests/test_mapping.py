@@ -80,6 +80,25 @@ def test_accepts_dcr_only_without_port_mappings():
     validate_mappings(ReportConfig(dcr=[DcrRow("SITE0", "RAIL_A", 1.0)]))
 
 
+def test_priorities_checked_across_selected_sites_only_when_enabled():
+    config = ReportConfig(mappings=[ChannelMapping(channel="A", site="S1", priority="1"),
+                                    ChannelMapping(channel="A", site="S2", priority="Auxiliary")])
+    validate_mappings(config)
+    config.settings.use_priority = True
+    with pytest.raises(ValueError, match="사이트마다"):
+        validate_mappings(config)
+    for a, b in [("1", "01"), ("Auxiliary", "Auxiliary"), ("", "")]:
+        config.mappings[0].priority, config.mappings[1].priority = a, b
+        validate_mappings(config)
+    config.mappings[1].selected = False
+    config.mappings[1].priority = "0"
+    validate_mappings(config)
+    for invalid in ("0", "-1", "1.5"):
+        config.mappings[0].priority = invalid
+        with pytest.raises(ValueError, match="정수"):
+            validate_mappings(config)
+
+
 def test_checks_selected_spd_port_even_after_manual_confirmation():
     spd = SpdData("synthetic.spd", {}, ports=[Port(1, "P1", net="RAIL_A")])
     row = ChannelMapping(spd_port="TYPO", net="RAIL_A", site="SITE0", channel="RAIL_A", confirmed=True)

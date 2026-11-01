@@ -6,6 +6,21 @@ from collections import Counter
 from .models import ChannelMapping, Port, ReportConfig, SpdData, TouchstoneData
 
 
+def priority_value(text: str) -> int | str | None:
+    """A channel has a positive rank, an unranked section name, or neither."""
+    text = text.strip()
+    if not text:
+        return None
+    if text.isdecimal() and len(text) <= 15 and int(text) > 0:
+        return int(text)
+    try:
+        float(text)
+    except ValueError:
+        if len(text) <= 32767 and not re.search(r"[\x00-\x1f]", text):
+            return text
+    raise ValueError("순위는 1 이상의 정수로, 별도 구분은 이름으로 입력하세요.")
+
+
 def _identity(port: Port) -> tuple[str, str, str]:
     text = port.net or port.name
     text = text.rsplit("::", 1)[-1].strip()
@@ -89,6 +104,7 @@ def validate_mappings(config: ReportConfig | list[ChannelMapping],
     ports: set[int] = set()
     available = {port.index for port in touchstone.ports} if touchstone else None
     spd_ports = {port.name for port in spd.ports} if spd else None
+    ranks = {}
     for row in selected:
         if not row.channel.strip() or not str(row.site).strip():
             raise ValueError("선택한 행의 채널과 사이트를 입력하세요.")
@@ -96,6 +112,10 @@ def validate_mappings(config: ReportConfig | list[ChannelMapping],
         if key in identities:
             raise ValueError(f"채널 {row.channel}, 사이트 {row.site}가 중복되었습니다. 사용할 단자를 하나만 선택하세요.")
         identities.add(key)
+        if isinstance(config, ReportConfig) and config.settings.use_priority:
+            rank = priority_value(row.priority)
+            if ranks.setdefault(key[0], rank) != rank:
+                raise ValueError(f"{row.channel}: 사이트마다 순위 또는 구분명이 다릅니다. 채널 순위 설정에서 하나로 맞추세요.")
         if not row.confirmed:
             raise ValueError(f"채널 {row.channel}, 사이트 {row.site}의 모호한 매핑을 확인하세요.")
         if spd_ports is not None and row.spd_port and row.spd_port not in spd_ports:
