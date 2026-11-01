@@ -2,7 +2,7 @@
 
 Windows에서 SPD·Touchstone·선택 DCR 입력으로 Excel 전원 무결성 보고서를 만듭니다. 채널·사이트 연결, 그룹별 그래프, 활성 CAP 수량과 배치도를 지원하며 모든 입력은 로컬에서 처리합니다.
 
-[Windows x64 설치 프로그램 다운로드](https://github.com/yunhyok/report-generator/releases/latest)에서 `SPD-Report-Generator-v0.1.3-Setup-x64.exe`를 실행하세요. 관리자 권한이나 Python 설치 없이 사용할 수 있습니다. 설치 후 시작 메뉴의 **SPD Report Generator**를 엽니다.
+[Windows x64 설치 프로그램 다운로드](https://github.com/yunhyok/report-generator/releases/latest)에서 `SPD-Report-Generator-v0.1.4-Setup-x64.exe`를 실행하세요. 관리자 권한이나 Python 설치 없이 사용할 수 있습니다. 설치 후 시작 메뉴의 **SPD Report Generator**를 엽니다.
 
 사용 순서·계산식·지원 범위는 [한국어 HTML 설명서](src/report_generator/docs/help.html)에 있습니다. GitHub에서는 HTML이 웹페이지로 표시되지 않으므로 파일을 내려받아 브라우저로 열거나, 프로그램의 **Help → 사용 설명서 / F1**을 사용하세요.
 

@@ -56,7 +56,7 @@ def _axes_font(ax, pcb=False) -> None:
     for text in ax.get_yticklabels():
         text.set_fontproperties(FONT)
     for text in ax.get_xticklabels():
-        text.set_fontproperties(FontProperties(family="Malgun Gothic", size=9 if pcb else 15))
+        text.set_fontproperties(FontProperties(family="Malgun Gothic", size=10 if pcb else 15))
     ax.xaxis.label.set_fontproperties(FontProperties(family="Malgun Gothic", size=9 if pcb else 14.5))
     ax.yaxis.label.set_fontproperties(FontProperties(family="Malgun Gothic", size=14))
 

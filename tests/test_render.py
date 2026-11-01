@@ -64,7 +64,7 @@ def test_group_plot_selected_ports_units_and_gaps(tmp_path, monkeypatch):
     assert captured["markers"] == ["None"]
 
 
-@pytest.mark.parametrize("board_type,fonts", [("MLO", (26, 14.5, 14, 15, 15)), ("PCB", (26, 9, 14, 9, 15))])
+@pytest.mark.parametrize("board_type,fonts", [("MLO", (26, 14.5, 14, 15, 15)), ("PCB", (26, 9, 14, 10, 15))])
 def test_group_plots_have_no_legend_or_port_count_dependent_height(tmp_path, monkeypatch, board_type, fonts):
     captured = []
     original = render.FigureCanvasAgg.print_png
