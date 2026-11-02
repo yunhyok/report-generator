@@ -111,3 +111,86 @@ def test_checks_selected_spd_port_even_after_manual_confirmation():
     row.spd_port = "TYPO"
     row.selected = False
     validate_mappings(ReportConfig(mappings=[row], dcr=[DcrRow("SITE0", "RAIL_A", 1.0)]), spd=spd)
+
+
+def test_numbered_endpoint_family_and_raw_spd_net_survive_mapping():
+    spd = SpdData("synthetic", {}, ports=[
+        Port(21, "Port21_LGA1::0_RAIL_A", net="0_RAIL_A", instance="LGA1", site="SITE0", channel="RAIL_A"),
+        Port(22, "Port22_LGA1::1_RAIL_A", net="1_RAIL_A", instance="LGA1", site="SITE1", channel="RAIL_A"),
+        Port(23, "Port23_C1::0_RAIL_A", net="0_RAIL_A", instance="C1", site="SITE0", channel="RAIL_A"),
+        Port(24, "Port24_LGA1::0_RAIL_A", net="0_RAIL_A", instance="LGA1", site="SITE0", channel="RAIL_A"),
+    ])
+    ts = touchstone(Port(1, "LGA1-RAIL_A/0", "Port21_LGA1::0_RAIL_A"),
+                    Port(2, "LGA1-RAIL_A/1", "Port22_LGA1::1_RAIL_A"))
+    for source in (None, spd):
+        rows = suggest_mappings(source, ts)
+        assert [(r.channel, r.site, r.net) for r in rows] == [
+            ("LGA1-RAIL_A", "SITE0", "0_RAIL_A"), ("LGA1-RAIL_A", "SITE1", "1_RAIL_A")]
+        assert all(r.confirmed and r.selected for r in rows)
+        assert rows[0].source_name == "LGA1-RAIL_A/0 | Port21_LGA1::0_RAIL_A"
+        if source:
+            assert [r.spd_port for r in rows] == [p.name for p in spd.ports[:2]]
+        validate_mappings(rows, ts, source)
+
+
+def test_numbered_family_is_not_site_and_description_can_supply_missing_site():
+    ts = touchstone(Port(1, "LGA1-RAIL_A", "Port21_LGA1::0_RAIL_A"),
+                    Port(2, "LGA2-RAIL_B"), Port(3, "070_RAIL_C"))
+    rows = suggest_mappings(None, ts)
+    assert (rows[0].channel, rows[0].site, rows[0].net, rows[0].confirmed) == (
+        "LGA1-RAIL_A", "SITE0", "0_RAIL_A", True)
+    assert (rows[1].channel, rows[1].site, rows[1].confirmed) == ("LGA2-RAIL_B", "", False)
+    assert (rows[2].channel, rows[2].site, rows[2].confirmed) == ("070_RAIL_C", "", False)
+    fallback = suggest_mappings(None, touchstone(Port(1, "Port21_LGA1::0_RAIL_A")))[0]
+    assert (fallback.channel, fallback.site, fallback.net, fallback.confirmed) == (
+        "LGA1-RAIL_A", "SITE0", "0_RAIL_A", True)
+
+
+@pytest.mark.parametrize("label,description", [
+    ("LGA1-RAIL_A/1", "Port21_LGA1::0_RAIL_A"),
+    ("LGA1-RAIL_B/0", "Port21_LGA1::0_RAIL_A"),
+    ("LGA1-RAIL_A/0", "Port21_LGA2::0_RAIL_A"),
+])
+def test_conflicting_endpoint_label_and_description_need_confirmation(label, description):
+    row = suggest_mappings(None, touchstone(Port(1, label, description)))[0]
+    assert not row.confirmed
+
+
+def test_duplicate_numbered_family_endpoints_still_require_confirmation():
+    ts = touchstone(Port(1, "LGA1-RAIL_A/0", "Port21_LGA1::0_RAIL_A"),
+                    Port(2, "LGA1-RAIL_A/0", "Port22_LGA1::0_RAIL_A"))
+    assert all(not r.confirmed for r in suggest_mappings(None, ts))
+
+
+def test_spd_only_does_not_add_cap_fallback_for_explicit_port_net():
+    spd = SpdData("synthetic", {}, ports=[
+        Port(21, "Port21_LGA1::0_RAIL_A", net="0_RAIL_A", instance="LGA1", site="SITE0", channel="RAIL_A"),
+        Port(22, "Port22_LGA1::1_RAIL_A", net="1_RAIL_A", instance="LGA1", site="SITE1", channel="RAIL_A", enabled=False),
+    ], components=[Component("C1", "CAP", ["GND", "0_RAIL_A"], is_cap=True),
+                   Component("C2", "CAP", ["GND", "1_RAIL_A"], is_cap=True)])
+    rows = suggest_mappings(spd, None)
+    assert len(rows) == 2
+    assert [(r.channel, r.selected, r.confirmed) for r in rows] == [
+        ("LGA1-RAIL_A", True, True), ("LGA1-RAIL_A", False, True)]
+    validate_mappings(rows, spd=spd)
+
+
+def test_specific_spd_description_does_not_match_another_unique_port():
+    spd = SpdData("synthetic", {}, ports=[
+        Port(21, "Port21_LGA1::0_RAIL_A", net="0_RAIL_A", instance="LGA1", site="SITE0", channel="RAIL_A")])
+    row = suggest_mappings(spd, touchstone(Port(1, "LGA1-RAIL_A/0", "Port99_LGA1::0_RAIL_A")))[0]
+    assert not row.confirmed
+    assert row.spd_port == ""
+
+
+def test_spd_positive_terminal_overrides_fallback_name_and_exact_ts_descriptor():
+    spd = SpdData("synthetic", {}, ports=[
+        Port(21, "Port21_LGA1::fallback", net="0_RAIL_A", instance="LGA1", site="SITE0", channel="RAIL_A")])
+    row = suggest_mappings(spd, None)[0]
+    assert (row.net, row.site, row.channel, row.confirmed) == ("0_RAIL_A", "SITE0", "LGA1-RAIL_A", True)
+    ts = touchstone(Port(1, "LGA1-RAIL_A/0", "Port21_LGA1::fallback"))
+    row = suggest_mappings(spd, ts)[0]
+    assert (row.net, row.site, row.channel, row.confirmed) == ("0_RAIL_A", "SITE0", "LGA1-RAIL_A", True)
+    assert row.spd_port == spd.ports[0].name
+    ts.ports[0].description = "Port21_LGA1::0_RAIL_A"
+    assert not suggest_mappings(spd, ts)[0].confirmed

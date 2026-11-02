@@ -113,6 +113,13 @@ def test_loading_sources_clears_previous_preview(window):
     assert_preview_empty(window)
 
 
+def test_partial_load_shows_failure_in_status_and_log(window):
+    window.action = "load"
+    window.on_finished((SpdData("test.spd", {}), None, [], ["touchstone: invalid header"]))
+    assert "읽지 못했습니다" in window.status.text()
+    assert "touchstone: invalid header" in window.log.toPlainText()
+
+
 def test_opening_source_free_project_clears_previous_preview(window, monkeypatch):
     seed_preview(window)
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: ("synthetic.report.json", ""))

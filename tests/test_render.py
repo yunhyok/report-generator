@@ -35,7 +35,9 @@ def test_geometry_rotation_bottom_mirror_and_unknown_dimensions(tmp_path, monkey
         assert image.height == 990 and image.width > image.height
         assert image.convert("RGB").getpixel((0, 0)) == (0, 0, 0)
     config.settings.bottom_mirror = False
+    spd.components[0].outline_vertices = ((-1, 0), (1, 0), (0, 1))
     render.render_placement(spd, config, "Bottom", tmp_path / "unmirrored.png")
+    assert captured["vertices"] == pytest.approx(np.array([[10, 19], [10, 21], [9, 20], [10, 19]]))
     assert captured["limits"][0] < captured["limits"][1]
 
 

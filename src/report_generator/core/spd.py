@@ -18,6 +18,9 @@ def infer_site_channel(net: str, instance: str = "") -> tuple[str, str]:
     match = re.match(r"^(?:SITE|U)(\d+)[_-](.+)$", net, re.I)
     if match:
         return f"SITE{int(match[1])}", match[2]
+    match = re.match(r"^(\d+)_(.+)$", net) if re.fullmatch(r"(?:LGA|BGA|POGO|DIE|LOAD|SOURCE)\d+", instance, re.I) else None
+    if match:
+        return f"SITE{int(match[1])}", match[2]
     match = re.match(r"^(.+)/(\d+)$", net)
     if match:
         return f"SITE{int(match[2])}", match[1]
@@ -163,6 +166,7 @@ def _scan(path, signature, encoding, progress, cancel):
     section = ""
     model = None
     model_elements = 0
+    model_resistors_only = True
     model_invalid = False
     model_header = False
     connection = None
@@ -171,6 +175,7 @@ def _scan(path, signature, encoding, progress, cancel):
     positive_nets = []
     alias_group = []
     net_group = ""
+    part_record = ""
     offset = 0
     next_update = 0
     line_no = 0
@@ -190,6 +195,24 @@ def _scan(path, signature, encoding, progress, cancel):
             data.aliases.setdefault(name, [])
             data.aliases[name].extend(peer for peer in unique if peer != name and peer not in data.aliases[name])
 
+    def finish_part():
+        match = re.search(r"\bOutline\s*=\s*(.*)", part_record)
+        if not match:
+            return
+        outline = re.split(r"\s+\w+\s*=", match[1], maxsplit=1)[0]
+        values = [_dimension(token) for token in outline.split()]
+        vertices = ()
+        if len(values) == 2:
+            dimensions = tuple(values)
+        elif len(values) >= 6 and len(values) % 2 == 0:
+            dimensions = max(values[::2]) - min(values[::2]), max(values[1::2]) - min(values[1::2])
+            vertices = tuple(zip(values[::2], values[1::2]))
+        else:
+            raise ValueError("SPD part outline needs dimensions or polygon coordinates.")
+        if min(dimensions) <= 0:
+            raise ValueError("SPD part outline must have positive dimensions.")
+        parts[part_record.split()[1]] = (*dimensions, vertices)
+
     with path.open("rb", buffering=1024 * 1024) as handle:
         for line_no, raw in enumerate(handle, 1):
             offset += len(raw)
@@ -203,6 +226,12 @@ def _scan(path, signature, encoding, progress, cancel):
                 continue
             text = raw.decode(encoding).strip()
             try:
+                if section == "part":
+                    if text.startswith("+"):
+                        part_record += " " + text.lstrip("+ ")
+                        continue
+                    finish_part()
+                    section = ""
                 if section == "padstack":
                     if text.startswith(".PadDef "):
                         padlayer = text.split()[1]
@@ -230,7 +259,8 @@ def _scan(path, signature, encoding, progress, cancel):
                 if section == "model":
                     if text.lower().startswith(".endpartialckt"):
                         model.valid = model_elements > 0 and not model_invalid
-                        model.capacitance_f = model.comment_capacitance_f or model.name_capacitance_f
+                        named_cap = re.match(r"(?:CAP(?:ACITOR)?(?:[_-]|$)|C\d)", model.name, re.I)
+                        model.capacitance_f = model.comment_capacitance_f or (model.name_capacitance_f if not model_resistors_only or model_elements == 0 or named_cap else None)
                         model.conflict = model.conflict or bool(model.comment_capacitance_f and model.name_capacitance_f and not math.isclose(model.comment_capacitance_f, model.name_capacitance_f, rel_tol=1e-6))
                         if model.conflict:
                             data.warnings.append("A model name and its nominal capacitance comment disagree; review model evidence.")
@@ -254,6 +284,7 @@ def _scan(path, signature, encoding, progress, cancel):
                             pass
                         elif tokens[0][0].upper() in "RCLKXDQMVIBEFGHJSWTUOZ" and len(tokens) >= 4:
                             model_elements += 1
+                            model_resistors_only &= tokens[0][0].upper() == "R"
                             if tokens[0][0].upper() in "RCL":
                                 value = _SPICE_VALUE.fullmatch(tokens[3])
                                 if not value or not math.isfinite(float(value[1])):
@@ -337,6 +368,7 @@ def _scan(path, signature, encoding, progress, cancel):
                     model = SpiceModel(name, name_capacitance_f=parse_capacitance(name))
                     data.models[name] = model
                     model_elements, model_invalid, model_header = 0, False, True
+                    model_resistors_only = True
                     section = "model"
                 elif text.startswith(".Connect "):
                     if len(tokens) < 3 or tokens[1] in components:
@@ -360,12 +392,7 @@ def _scan(path, signature, encoding, progress, cancel):
                     else:
                         placements[tokens[1]] = (_dimension(tokens[2]), _dimension(tokens[3]), rotation, side)
                 elif text.startswith(".Part "):
-                    match = re.search(r"\bOutline\s*=\s*(\S+)\s+(\S+)", text)
-                    if match:
-                        dimensions = _dimension(match[1]), _dimension(match[2])
-                        if min(dimensions) <= 0:
-                            raise ValueError("SPD part outline must have positive dimensions.")
-                        parts[tokens[1]] = dimensions
+                    part_record, section = text, "part"
                 elif text.lower() == ".port":
                     section = "port"
                 elif text.lower() == ".netalias":
@@ -375,6 +402,9 @@ def _scan(path, signature, encoding, progress, cancel):
             except (ValueError, IndexError) as exc:
                 raise ValueError(f"Invalid SPD structure at line {line_no}: {exc}") from exc
     checkpoint(cancel)
+    if section == "part":
+        finish_part()
+        section = ""
     if section:
         raise ValueError(f"Unterminated SPD {section} section near line {line_no}.")
     if not components and not data.models and not data.ports:
@@ -383,11 +413,11 @@ def _scan(path, signature, encoding, progress, cancel):
         raise ValueError("Duplicate SPD port names make channel mapping ambiguous.")
     for component in components.values():
         model = data.models.get(component.model_name)
-        component.is_cap = bool((model and model.capacitance_f is not None) or re.match(r"(?:CAP(?:[_-]|$)|C\d)", component.model_name, re.I) or re.match(r"C\d", component.refdes, re.I))
+        component.is_cap = bool((model and model.capacitance_f is not None) or re.match(r"(?:CAP(?:ACITOR)?(?:[_-]|$)|C\d)", component.model_name, re.I) or re.match(r"C\d", component.refdes, re.I))
         if component.refdes in placements:
             component.x_mm, component.y_mm, component.rotation, component.side = placements[component.refdes]
         if component.model_name in parts:
-            component.width_mm, component.height_mm = parts[component.model_name]
+            component.width_mm, component.height_mm, component.outline_vertices = parts[component.model_name]
     data.components = list(components.values())
     if node_references:
         _attach_surface_pads(path, data, node_references, padstacks, encoding, progress, cancel)

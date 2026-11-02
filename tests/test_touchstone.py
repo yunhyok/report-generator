@@ -120,3 +120,18 @@ def test_resistive_t_network_against_known_open_circuit_impedance(tmp_path):
     matrix = np.array([[-73 / 167, 20 / 167], [20 / 167, -113 / 167]], dtype=complex)
     data = read_touchstone(write_network(tmp_path, [matrix], (100,), reference=50))
     np.testing.assert_allclose(data.z_diagonal[0], [20, 10], atol=1e-12)
+
+
+def test_numbered_endpoint_labels_keep_ordered_spd_descriptions(tmp_path):
+    path = tmp_path / "synthetic.s2p"
+    path.write_text("\n".join([
+        "! Port21_LGA1::0_RAIL_A", "! Port22_LGA1::1_RAIL_A",
+        "! Port[1] = LGA1-RAIL_A/0", "! Port[2] = LGA1-RAIL_A/1",
+        "! Port 1 = LGA1-PAD1 0_RAIL_A", "! Port 2 = LGA1-PAD2 1_RAIL_A",
+        "# Hz S RI R 1", "1 0 0 0 0 0 0 0 0",
+    ]), encoding="ascii")
+    data = read_touchstone(path)
+    assert [(p.index, p.name, p.description) for p in data.ports] == [
+        (1, "LGA1-RAIL_A/0", "Port21_LGA1::0_RAIL_A"),
+        (2, "LGA1-RAIL_A/1", "Port22_LGA1::1_RAIL_A")]
+    assert not data.warnings

@@ -755,7 +755,8 @@ class MainWindow(QMainWindow):
             for warning in errors + (self.spd.warnings if self.spd else []) + (self.ts.warnings if self.ts else []):
                 self.log.appendPlainText(warning)
             self.tabs.setCurrentIndex(1)
-            self.status.setText("파일을 읽었습니다. 사용할 포트와 채널 연결을 확인하세요.")
+            self.status.setText("일부 입력을 읽지 못했습니다. 아래 로그에서 실패한 파일을 확인하세요."
+                                if errors else "파일을 읽었습니다. 사용할 포트와 채널 연결을 확인하세요.")
         else:
             if self.action == "preview":
                 report, self.preview_images = result

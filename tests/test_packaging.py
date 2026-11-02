@@ -5,6 +5,21 @@ import pytest
 from scripts import build_release
 
 
+def test_installer_uses_program_files_and_shows_destination_page():
+    installer = (build_release.ROOT / "packaging/installer.iss").read_text(encoding="utf-8")
+    assert "DefaultDirName={autopf}\\{#AppName}" in installer
+    assert "DisableDirPage=no" in installer
+    assert "PrivilegesRequired=admin" in installer
+
+
+def test_release_version_is_synchronized():
+    import tomllib
+
+    version = tomllib.loads((build_release.ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    assert f'__version__ = "{version}"' in (build_release.ROOT / "src/report_generator/__init__.py").read_text(encoding="utf-8")
+    assert f"v{version}" in (build_release.ROOT / "src/report_generator/docs/help.html").read_text(encoding="utf-8")
+
+
 def test_explicit_compiler_path_does_not_need_external_translation(tmp_path, monkeypatch):
     compiler = tmp_path / "Inno Setup" / "ISCC.exe"
     compiler.parent.mkdir()

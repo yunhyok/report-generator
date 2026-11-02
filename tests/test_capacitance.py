@@ -11,6 +11,8 @@ import pytest
     ("C = 2.20e-01[uF]", 220e-9), ("0805M/X7R/2.2uF/25V", 2.2e-6),
     ("2.2 µF", 2.2e-6), ("100P", 100e-12), ("1e-6", 1e-6),
     ("0805M", None), ("NULL", None), ("CAP_2012", None), ("-1uF", None),
+    ("CAP_1005_4_7U_4_7U", 4.7e-6), ("CAP_1005_2_2NF_2_2NF", 2.2e-9),
+    ("CAP_2012_2U_2U", 2e-6),
 ])
 def test_parse(text, value):
     actual = parse_capacitance(text)

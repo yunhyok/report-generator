@@ -81,6 +81,7 @@ class Component:
     is_cap: bool = False
     pin_bounds: tuple[float, float, float, float] | None = None
     pads: list[SurfacePad] = field(default_factory=list)
+    outline_vertices: tuple[tuple[float, float], ...] = ()
 
 
 @dataclass

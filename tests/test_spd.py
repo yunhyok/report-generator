@@ -89,10 +89,121 @@ def test_no_identifier_replacement_and_site_patterns(tmp_path):
     assert infer_site_channel("POWER/3", "LGA") == ("SITE3", "POWER")
 
 
+@pytest.mark.parametrize("net,expected", [
+    ("0_POWER_A", ("SITE0", "POWER_A")),
+    ("1_POWER_A", ("SITE1", "POWER_A")),
+    ("12_POWER_A", ("SITE12", "POWER_A")),
+    ("POWER_A", ("", "POWER_A")),
+])
+def test_numeric_site_prefix_uses_net_not_package_instance(net, expected):
+    assert infer_site_channel(net, "LGA1") == expected
+
+
+@pytest.mark.parametrize("instance", ["", "C1", "LGA", "CONNECTOR1"])
+def test_numeric_rail_prefix_without_endpoint_context_is_not_site(instance):
+    assert infer_site_channel("12_POWER_A", instance) == ("", "12_POWER_A")
+
+
+def test_load_port_preserves_raw_net_and_infers_zero_based_site(tmp_path):
+    path = tmp_path / "synthetic.spd"
+    path.write_text(SAMPLE.replace("U2_POWER", "0_POWER_A").replace(
+        'Port9_C1::fallback Auto GenFromCktInstance="C1"',
+        'Port9_LGA1::fallback Auto GenFromCktInstance="LGA1"',
+    ), encoding="utf-8")
+    port = read_spd(path).ports[0]
+    assert (port.name, port.instance) == ("Port9_LGA1::fallback", "LGA1")
+    assert (port.net, port.site, port.channel) == ("0_POWER_A", "SITE0", "POWER_A")
+
+
+def test_polygon_part_outline_uses_coordinate_extents(tmp_path):
+    path = tmp_path / "synthetic.spd"
+    path.write_text(SAMPLE.replace(
+        "Outline = 1mm 0.5mm",
+        "Outline = -2mm 1mm -1mm 1mm -1mm 2mm 1mm 2mm Tags = synthetic",
+    ), encoding="utf-8")
+    component = read_spd(path).components[0]
+    assert (component.width_mm, component.height_mm) == (3, 1)
+    assert component.outline_vertices == ((-2, 1), (-1, 1), (-1, 2), (1, 2))
+
+
+def test_multiline_part_outline_and_trailing_properties(tmp_path):
+    path = tmp_path / "synthetic.spd"
+    path.write_text(SAMPLE.replace(
+        ".Part CAP_0805M_220N Outline = 1mm 0.5mm",
+        ".Part CAP_0805M_220N Height = 1mm\n"
+        "+ Outline = -2mm 1mm -1mm 1mm\n"
+        "+ -1mm 3mm 4mm 3mm\n"
+        "+ Tags = synthetic W3DCktWidth = 0mm",
+    ), encoding="utf-8")
+    data = read_spd(path)
+    component = data.components[0]
+    assert (component.width_mm, component.height_mm) == (6, 2)
+    assert component.x_mm == 2
+    assert component.outline_vertices == ((-2, 1), (-1, 1), (-1, 3), (4, 3))
+
+
+def test_part_record_at_end_of_file(tmp_path):
+    path = tmp_path / "synthetic.spd"
+    path.write_text(SAMPLE + ".Part CAP_0805M_220N Outline = 2mm 1mm\n+ Tags = synthetic", encoding="utf-8")
+    assert read_spd(path).components[0].width_mm == 2
+
+
+@pytest.mark.parametrize("outline", ["-1mm 2mm", "0mm 2mm", "1mm 2mm 3mm", "1mm 0mm 1mm 1mm 1mm 2mm"])
+def test_invalid_part_outline_rejected(tmp_path, outline):
+    path = tmp_path / "synthetic.spd"
+    path.write_text(SAMPLE.replace("Outline = 1mm 0.5mm", f"Outline = {outline}"), encoding="utf-8")
+    with pytest.raises(ValueError, match="outline"):
+        read_spd(path)
+
+
 def test_invalid_model_scalar_is_not_automatic_active(tmp_path):
     path = tmp_path / "synthetic.spd"
     path.write_text(SAMPLE.replace("C1 1 2 1.8u", "C1 1 2 nan"), encoding="utf-8")
     assert not read_spd(path).models["CAP_0805M_220N"].valid
+
+
+def test_repeated_decimal_model_name_agrees_with_nominal_comment(tmp_path):
+    path = tmp_path / "synthetic.spd"
+    path.write_text(SAMPLE.replace("CAP_0805M_220N", "CAP_1005_2_2U_2_2U"), encoding="utf-8")
+    model = read_spd(path).models["CAP_1005_2_2U_2_2U"]
+    assert model.name_capacitance_f == pytest.approx(2.2e-6)
+    assert model.comment_capacitance_f == pytest.approx(2.2e-6)
+    assert not model.conflict
+
+
+def test_resistor_model_unit_name_is_not_capacitance_and_polar_cap_prefix_is_recognized(tmp_path):
+    path = tmp_path / "synthetic.spd"
+    path.write_text(""".PartialCkt SWITCH_100U ExtNode = 1 2
+RS1 1 2 1u
+.EndPartialCkt
+.PartialCkt CAPACITOR_POL_1M ExtNode = 1 2
+C1 1 2 1m
+.EndPartialCkt
+.Connect Q1 SWITCH_100U
+1 $Package.Node1::POWER
+2 $Package.Node2::GND
+.EndC
+.Connect TC1 CAPACITOR_POL_1M Usage = 0b111000
+1 $Package.Node3::POWER
+2 $Package.Node4::GND
+.EndC
+""", encoding="utf-8")
+    data = read_spd(path)
+    assert data.models["SWITCH_100U"].capacitance_f is None
+    assert not data.components[0].is_cap
+    assert data.components[1].is_cap
+    assert data.components[1].status == "Disabled"
+
+
+@pytest.mark.parametrize("model_name,body", [
+    ("GENERIC_100U", ""),
+    ("CAP_GENERIC_100U", "R1 1 2 1u"),
+    ("GENERIC_100U", "* Property : C = 100[uF]\nR1 1 2 1u"),
+])
+def test_explicit_capacitance_evidence_and_empty_models_keep_nominal_value(tmp_path, model_name, body):
+    path = tmp_path / "synthetic.spd"
+    path.write_text(f".PartialCkt {model_name} ExtNode = 1 2\n{body}\n.EndPartialCkt\n", encoding="utf-8")
+    assert read_spd(path).models[model_name].capacitance_f == pytest.approx(100e-6)
 
 
 def test_referenced_surface_pads_rotation_offsets_and_pin_bounds(tmp_path):

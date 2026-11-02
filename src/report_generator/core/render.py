@@ -183,9 +183,10 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
             continue
         angle = radians(c.rotation)
         vertices = []
-        for dx, dy in [(-.5, -.5), (.5, -.5), (.5, .5), (-.5, .5)]:
-            dx *= c.width_mm
-            dy *= c.height_mm
+        half_width, half_height = c.width_mm / 2, c.height_mm / 2
+        outline = c.outline_vertices or ((-half_width, -half_height), (half_width, -half_height),
+                                         (half_width, half_height), (-half_width, half_height))
+        for dx, dy in outline:
             vertices.append((x + dx * cos(angle) - dy * sin(angle),
                              y + dx * sin(angle) + dy * cos(angle)))
         polygons[kind, color].append(vertices)

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from dataclasses import replace
 
 from .models import ChannelMapping, Port, ReportConfig, SpdData, TouchstoneData
+from .spd import infer_site_channel
 
 
 def priority_value(text: str) -> int | str | None:
@@ -22,10 +24,15 @@ def priority_value(text: str) -> int | str | None:
 
 
 def _identity(port: Port) -> tuple[str, str, str]:
+    description = re.fullmatch(r"Port\d+_([^:]+)::(.+)", port.description or port.name, re.IGNORECASE)
+    instance = port.instance or (description.group(1) if description else "")
+    named_family = re.match(r"^((?:LGA|POGO|BGA|DIE|LOAD|SOURCE)\d+)[_:-]+", port.name, re.IGNORECASE)
+    family = named_family.group(1) if named_family else (
+        instance if re.fullmatch(r"(?:LGA|POGO|BGA|DIE|LOAD|SOURCE)\d+", instance, re.IGNORECASE) else "")
     text = port.net or port.name
     text = text.rsplit("::", 1)[-1].strip()
     text = re.sub(r"^Port\d+_", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"^(?:LGA|POGO|BGA|DIE|LOAD|SOURCE)[_:-]+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^(?:LGA|POGO|BGA|DIE|LOAD|SOURCE)\d*[_:-]+", "", text, flags=re.IGNORECASE)
     site = str(port.site).strip()
     prefix = re.match(r"^(?:SITE|U)(\d+)[_:-]+(.+)$", text, re.IGNORECASE)
     if prefix:
@@ -35,6 +42,19 @@ def _identity(port: Port) -> tuple[str, str, str]:
     if suffix:
         text, inferred = suffix.groups()
         site = site or inferred
+    inferred_site, channel = infer_site_channel(text, instance)
+    channel = port.channel or channel
+    site = site or inferred_site
+    description_net = ""
+    if description and not port.net:
+        description_net = description.group(2)
+        description_site, description_channel = infer_site_channel(description_net, description.group(1))
+        normalized_site = f"SITE{int(site)}" if site.isdecimal() else site.upper()
+        if (description_channel != channel
+                or (description_site and site and description_site != normalized_site)
+                or (named_family and description.group(1).casefold() != family.casefold())):
+            return port.net or text, "", f"{family}-{channel}" if family else channel
+        site = site or description_site
     if not site:
         context = re.search(r"(?:SITE|\bU)(\d+)(?:\b|[_:-])",
                             " ".join((port.description, port.instance, port.name)), re.IGNORECASE)
@@ -43,21 +63,36 @@ def _identity(port: Port) -> tuple[str, str, str]:
     site = re.sub(r"^SITE\s*", "", site, flags=re.IGNORECASE)
     if site.isdecimal():
         site = f"SITE{int(site)}"
-    return port.net or text, site, port.channel or text
+    return port.net or description_net or text, site, f"{family}-{channel}" if family else channel
 
 
 def suggest_mappings(spd: SpdData | None, ts: TouchstoneData | None) -> list[ChannelMapping]:
     """Preserve every endpoint; duplicate channel/site candidates require explicit confirmation."""
     spd_ports = spd.ports if spd else []
+    spd_candidates: dict[tuple[str, str], list[Port]] = {}
+    spd_names: dict[str, list[Port]] = {}
+    for port in spd_ports:
+        spd_candidates.setdefault(_identity(port)[1:], []).append(port)
+        for name in {port.name, port.description} - {""}:
+            spd_names.setdefault(name, []).append(port)
     rows: list[ChannelMapping] = []
     ports = ts.ports if ts else spd_ports
     for port in ports:
         net, site, channel = _identity(port)
-        candidates = [p for p in spd_ports if _identity(p)[1:] == (site, channel)]
-        if ts and len(candidates) > 1 and port.description:
-            matching = [p for p in candidates if p.name == port.description or p.description == port.description]
-            if matching:
-                candidates = matching
+        candidates = spd_candidates.get((site, channel), [])
+        if ts:
+            descriptor = port.description or port.name
+            if re.fullmatch(r"Port\d+_[^:]+::.+", descriptor, re.IGNORECASE):
+                _, label_site, label_channel = _identity(replace(port, description=""))
+                candidates = [p for p in spd_names.get(descriptor, [])
+                              if _identity(p)[2] == label_channel
+                              and (not label_site or _identity(p)[1] == label_site)]
+                if len(candidates) == 1:
+                    net, site, channel = _identity(candidates[0])
+            elif len(candidates) > 1 and port.description:
+                matching = [p for p in candidates if p.name == port.description or p.description == port.description]
+                if matching:
+                    candidates = matching
         if ts and len(candidates) == 1:
             net = candidates[0].net or net
         confirmed = bool(channel and site != "") and (not ts or not spd or len(candidates) == 1)
@@ -68,7 +103,7 @@ def suggest_mappings(spd: SpdData | None, ts: TouchstoneData | None) -> list[Cha
             net=net, site=site, channel=channel, group=channel, selected=port.enabled,
             status="자동 제안" if confirmed else "매핑 확인 필요", confirmed=confirmed))
     if spd and not ts:
-        existing = {(row.net, row.site, row.channel) for row in rows}
+        existing = {row.net for row in rows}
         ground = {net.casefold() for net in spd.ground_nets}
         for component in spd.components:
             if not component.is_cap:
@@ -77,10 +112,9 @@ def suggest_mappings(spd: SpdData | None, ts: TouchstoneData | None) -> list[Cha
                 if net.casefold() in ground:
                     continue
                 raw_net, site, channel = _identity(Port(0, net, net=net))
-                key = (raw_net, site, channel)
-                if key in existing:
+                if raw_net in existing:
                     continue
-                existing.add(key)
+                existing.add(raw_net)
                 rows.append(ChannelMapping(source_name=net, net=raw_net, site=site, channel=channel,
                                            group=channel, status="커패시터 네트에서 제안", confirmed=bool(site)))
     counts = Counter((row.channel.casefold(), row.site.casefold()) for row in rows)

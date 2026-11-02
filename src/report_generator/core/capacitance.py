@@ -19,6 +19,10 @@ def parse_capacitance(text: str) -> float | None:
     normalized = str(text).strip()
     if re.search(r"(?:^|[=\s])-\s*\d", normalized):
         return None
+    # Generated model names repeat decimal values with underscores in place of the point.
+    decimal = re.search(r"(?<![A-Za-z0-9])(\d+_\d+[pnuµμ]f?)(?:_\1)(?=$|[_-])", normalized, re.I)
+    if decimal:
+        normalized = decimal[1].replace("_", ".")
     # Package sizes and part numbers are not capacitance evidence.
     for match in _VALUE.finditer(normalized):
         unit = match.group(2) or ""
