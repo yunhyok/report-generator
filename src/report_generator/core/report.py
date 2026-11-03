@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from math import isfinite
+from math import ceil, isfinite
 import os
 from pathlib import Path
 import re
@@ -9,6 +9,7 @@ import tempfile
 import numpy as np
 from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from openpyxl.comments import Comment
 from openpyxl.drawing.image import Image
 from openpyxl.styles import Alignment, Border, Color, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -18,7 +19,7 @@ from .models import ReportConfig, ReportResult, SpdData, TouchstoneData, checkpo
 from .render import placement_components, render_group_plot, render_placement
 from .capacitance import summarize_caps
 from .mapping import group_presentation, priority_value
-from .touchstone import interpolate_impedance
+from .touchstone import interpolate_impedance, plot_frequency_bounds, plot_impedance
 
 
 FREQUENCIES = (1e5, 1e6, 1e7, 1e8, 1e9)
@@ -80,7 +81,28 @@ def _widths(ws, column, widths):
 
 
 def _label_width(labels, minimum):
-    return min(255, max(minimum, max((len(str(label)) * 1.1 for label in labels), default=minimum)))
+    return min(255, max(minimum, max((len(line) * 1.1 for label in labels
+                                    for line in str(label).splitlines()), default=minimum)))
+
+
+def _channel_label(channel, mappings, sites=None):
+    names = {m.site: m.display_name.strip() or channel for m in mappings if m.channel == channel}
+    if sites is not None:
+        names = {site: names.get(site, channel) for site in sites}
+    if len(set(names.values())) <= 1:
+        return next(iter(names.values()), channel)
+    return "\n".join(f"{site}: {name}" for site, name in names.items())
+
+
+def _channel_comment(cell, channel, label, width=None):
+    if label != channel:
+        cell.comment = Comment(channel, "SPD Report Generator")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        width = width or cell.parent.column_dimensions[cell.column_letter].width
+        lines = sum(max(1, ceil(len(line) * 1.1 / width)) for line in str(cell.value).splitlines())
+        if lines > 1:
+            dimensions = cell.parent.row_dimensions[cell.row]
+            dimensions.height = min(409, max(dimensions.height or 16.5, 16.5 * lines))
 
 
 def _mappings(config, ts=None, summary=False):
@@ -159,15 +181,13 @@ def _plan(config, spd, ts):
     else:
         omitted["CAP_배치도면"] = "표시할 부품 좌표가 없습니다."
     for group, maps in plot_groups(config, ts).items():
-        valid = any(np.any(np.isfinite(np.abs(ts.z_diagonal[:, m.port_index - 1])) &
-                           (np.abs(ts.z_diagonal[:, m.port_index - 1]) > 0) &
-                           np.isfinite(ts.frequency_hz) & (ts.frequency_hz >= 1e3) & (ts.frequency_hz <= 1e9)) for m in maps)
+        valid = any(np.any(plot_impedance(ts, m.port_index)[1] > 0) for m in maps)
         if valid:
             title, _ = group_presentation(group, maps)
             heading = title if any(m.display_name.strip() for m in maps) else None
             add("group", title, (group, heading))
         else:
-            omitted[f"그룹: {group}"] = "1kHz~1GHz 범위에 유효한 임피던스가 없습니다."
+            omitted[f"그룹: {group}"] = "1kHz~2GHz 표시 범위에 유효한 임피던스가 없습니다."
     return pages, omitted
 
 
@@ -233,9 +253,10 @@ def _base_sheet(wb, name, config, kind, ts=None, page_title=None):
                 if value >= scale:
                     return f"{value / scale:g}{suffix}"
             return f"{value:g}Hz"
-        sweep = ts.frequency_hz[ts.frequency_hz > 0]
-        lower, upper = (sweep[0], sweep[-1]) if len(sweep) else (0, 0)
-        _note(ws, 2, f"* {frequency_label(lower)} ~ {frequency_label(upper)} : Automatic Frequency Sweep", 1)
+        bounds = plot_frequency_bounds(ts.frequency_hz)
+        if bounds is not None:
+            lower, upper = bounds
+            _note(ws, 2, f"* {frequency_label(lower)} ~ {frequency_label(upper)} : Automatic Frequency Sweep", 1)
     return ws
 
 
@@ -257,11 +278,13 @@ def _add_image(ws, path, anchor, max_width=900):
 
 
 def _write_100(ws, spots, factor, unit, use_priority=False):
+    mappings = [m for m, _, _ in spots]
     sites = list(dict.fromkeys(m.site for m, _, _ in spots))
     channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
+    labels = {channel: _channel_label(channel, mappings) for channel in channels}
     small = len(sites) <= 8
     lookup = {(m.channel, m.site): values[3] * factor for m, values, _ in spots if values[3] is not None}
-    priorities = _channel_priorities([m for m, _, _ in spots], use_priority)
+    priorities = _channel_priorities(mappings, use_priority)
     sections = _sections(channels, priorities, use_priority)
     data = {}
     for channel in channels:
@@ -270,15 +293,15 @@ def _write_100(ws, spots, factor, unit, use_priority=False):
         maximum = max(available) if available else None
         average = sum(available) / len(available) if available else None
         deviation = (maximum - average) / average if average else None
-        data[channel] = [channel, *values, deviation, maximum, average] if small else [channel, maximum, average, deviation, *values]
+        data[channel] = [labels[channel], *values, deviation, maximum, average] if small else [labels[channel], maximum, average, deviation, *values]
     if small:
         headers = [f"Channel / [{unit}]", *sites, "편차", "MAX.", "AVG."]
-        widths = [_label_width(channels, 36.75), *([9] * (len(sites) + 3))]
+        widths = [_label_width(labels.values(), 36.75), *([9] * (len(sites) + 3))]
         deviation_column, site_column = 3 + len(sites) + use_priority, 3 + use_priority
     else:
         headers = [f"Channel / [{unit}]", "MAX.", "AVG.", "편차", *sites]
         numeric_width = 6.875 if unit == "Ω" else 9
-        widths = [_label_width(channels, 16.125), numeric_width, numeric_width,
+        widths = [_label_width(labels.values(), 16.125), numeric_width, numeric_width,
                   7.75 if unit == "Ω" else 6.75, *([numeric_width] * len(sites))]
         deviation_column, site_column = 5 + use_priority, 6 + use_priority
     if use_priority:
@@ -298,6 +321,7 @@ def _write_100(ws, spots, factor, unit, use_priority=False):
             for offset, value in enumerate(values):
                 _put(ws, row, 2 + offset, value,
                      number_format=NUMBER if offset > use_priority else None)
+            _channel_comment(ws.cell(row, 2 + use_priority), channel, labels[channel])
             ws.cell(row, deviation_column).number_format = "0.0%"
             if not small:
                 ws.cell(row, 2 + use_priority).font = _font(bold=True)
@@ -334,6 +358,7 @@ def _deviation(spots):
 def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, channel_order=(), use_priority=False):
     channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
     by_channel = {channel: [spot for spot in spots if spot[0].channel == channel] for channel in channels}
+    labels = [mapping.display_name.strip() or mapping.channel for mapping, _, _ in spots]
     priorities = _channel_priorities([m for m, _, _ in spots], use_priority)
     sections = _sections(channels, priorities, use_priority)
     number_format = "0.0_ " if wide and unit == "mΩ" else NUMBER
@@ -350,9 +375,9 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
         channel_column = column + priority
         site_column = channel_column + 1
         if detail and wide:
-            widths = ([9] if priority else []) + [_label_width(channels, 16.125), 7.5, 8.5, 7.5, 8.125, 9.625, 9.5]
+            widths = ([9] if priority else []) + [_label_width(labels, 16.125), 7.5, 8.5, 7.5, 8.125, 9.625, 9.5]
         else:
-            widths = ([9] if priority else []) + [_label_width(channels, 16.125 if detail else 30.5), 9]
+            widths = ([9] if priority else []) + [_label_width(labels, 16.125 if detail else 30.5), 9]
             widths += [9] * 5 if detail else [9.5, 9.125, 9.125, 9.125, 9.125, 9]
         _widths(ws, column, widths)
         row = 5
@@ -368,7 +393,9 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
                     if priority:
                         rank = priorities.get(channel)
                         _put(ws, row, column, rank if isinstance(rank, int) else None, fill=fill)
-                    _put(ws, row, channel_column, channel, fill=fill)
+                    display = mapping.display_name.strip() or channel
+                    cell = _put(ws, row, channel_column, display, fill=fill)
+                    _channel_comment(cell, channel, display)
                     _put(ws, row, site_column, _site_value(mapping.site), fill=fill)
                     _pi_values(ws, row, site_column + 1, values, flags, factor, number_format, fill)
                     row += 1
@@ -400,8 +427,9 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
                         _merged(ws, row, start, row, start + 2, "Priority", header=True, fill=fill)
                         _merged(ws, row, start + 3, row, start + block_width - 1,
                                 priorities[channel], header=True, fill=fill)
+                    display = _channel_label(channel, [mapping for mapping, _, _ in by_channel[channel]])
                     _merged(ws, header_row, start, header_row, start + block_width - 1,
-                            f"{channel} / [{unit}]", header=True, fill=fill)
+                            f"{display} / [{unit}]", header=True, fill=fill)
                     for index, heading in enumerate(["SITE", *FREQUENCY_LABELS] + ([] if detail else ["편차"])):
                         _put(ws, header_row + 1, start + index, heading, header=True, fill=fill)
                     widths = [9] * block_width if unit == "Ω" else (
@@ -411,6 +439,7 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
                         [5.5, 9, 7.875, 8.125, 9.25, 9, 5.75],
                     )[offset][:block_width]
                     _widths(ws, start, widths)
+                    _channel_comment(ws.cell(header_row, start), channel, display, sum(widths))
                     for data_row, (mapping, values, flags) in enumerate(by_channel[channel], header_row + 2):
                         _put(ws, data_row, start, _site_value(mapping.site))
                         _pi_values(ws, data_row, start + 1, values, flags, factor, number_format)
@@ -424,6 +453,8 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
 def _write_dcr(ws, rows, config):
     sites = list(dict.fromkeys(row.site for row in rows))
     channels = list(dict.fromkeys(row.channel for row in rows))
+    labels = {channel: _channel_label(channel, _mappings(config),
+                                    [row.site for row in rows if row.channel == channel]) for channel in channels}
     lookup = {}
     for row in rows:
         key = (row.channel, row.site)
@@ -433,14 +464,16 @@ def _write_dcr(ws, rows, config):
     small = len(sites) <= 8
     priorities = _priorities(config)
     data = [([next((priorities.get((channel, site)) for site in sites if priorities.get((channel, site)) is not None), None)] if small else []) +
-            [channel, *[lookup.get((channel, site)) for site in sites]] for channel in channels]
+            [labels[channel], *[lookup.get((channel, site)) for site in sites]] for channel in channels]
     headers = (["Priority"] if small else []) + ["Channel / [mΩ]", *sites]
     _table(ws, headers, data, number_columns=range(2 if small else 1, len(headers)))
     if small:
-        _widths(ws, 2, [8.25, _label_width(channels, 36.75), *([9.5] * len(sites))])
+        _widths(ws, 2, [8.25, _label_width(labels.values(), 36.75), *([9.5] * len(sites))])
     else:
         pcb = config.settings.board_type == "PCB"
-        _widths(ws, 2, [_label_width(channels, 15.875 if pcb else 15.375), *([9 if pcb else 7.875] * len(sites))])
+        _widths(ws, 2, [_label_width(labels.values(), 15.875 if pcb else 15.375), *([9 if pcb else 7.875] * len(sites))])
+    for row, channel in enumerate(channels, 5):
+        _channel_comment(ws.cell(row, 3 if small else 2), channel, labels[channel])
 
 
 def _write_caps(ws, rows, spd, config):
@@ -450,6 +483,8 @@ def _write_caps(ws, rows, spd, config):
     labels = {row["capacitance_f"]: row["label"] for row in rows}
     lookup = {(r["channel"], r["site"], r["capacitance_f"]): r["count"] for r in rows}
     mapped = {(m.channel, m.site) for m in _mappings(config)}
+    channel_labels = {channel: _channel_label(channel, _mappings(config),
+                                            [site for site in sites if (channel, site) in mapped]) for channel in channels}
     use_priority = config.settings.use_priority
     priorities = _channel_priorities(_mappings(config), use_priority)
     sections = _sections(channels, priorities, use_priority)
@@ -457,9 +492,9 @@ def _write_caps(ws, rows, spd, config):
     channel_column = 3 if use_priority else 2
     site_column = channel_column + 1
     if small:
-        widths = [_label_width(channels, 30.5), *([6.625] * len(sites))]
+        widths = [_label_width(channel_labels.values(), 30.5), *([6.625] * len(sites))]
     else:
-        widths = [_label_width(channels, 15.625 if config.settings.board_type == "PCB" else 14.625), *([9] * len(sites))]
+        widths = [_label_width(channel_labels.values(), 15.625 if config.settings.board_type == "PCB" else 14.625), *([9] * len(sites))]
     _widths(ws, 2, ([8.25] if use_priority else []) + widths)
     row_number = 4
     for value in values:
@@ -478,12 +513,13 @@ def _write_caps(ws, rows, spd, config):
                 if use_priority:
                     rank = priorities.get(channel)
                     _put(ws, row, 2, rank if isinstance(rank, int) else None)
-                _put(ws, row, channel_column, channel, size=11 if small else 12)
+                cell = _put(ws, row, channel_column, channel_labels[channel], size=11 if small else 12)
+                _channel_comment(cell, channel, channel_labels[channel])
                 for column, site in enumerate(sites, site_column):
                     count = lookup.get((channel, site, value), 0) if (channel, site) in mapped else None
                     _put(ws, row, column, count, number_format="0_ " if small else "General")
                 if not small:
-                    ws.row_dimensions[row].height = 17.25
+                    ws.row_dimensions[row].height = max(ws.row_dimensions[row].height or 0, 17.25)
                 row += 1
             if label:
                 _merged(ws, section_row, 2, row - 1, 2, label)

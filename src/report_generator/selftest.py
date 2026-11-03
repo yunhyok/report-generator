@@ -100,6 +100,8 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 assert any(label == "VDD_CORE_IO · Load rails" for label, _ in images)
                 priority_column = next(cell.column for cell in pi[4] if cell.value == "Priority")
                 assert pi.cell(5, priority_column).value == 1
+                assert pi["C5"].value == "VDD_CORE_IO" and pi["C5"].comment.text == "POWER"
+                assert pi["A2"].value == "* 1kHz ~ 1GHz : Automatic Frequency Sweep"
                 maximum_column = next(cell.column for cell in pi[4] if cell.value == "MAX.")
                 assert pi.cell(5, maximum_column).value == 1000
                 dcr = book["DCR"]

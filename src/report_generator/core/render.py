@@ -16,6 +16,7 @@ from matplotlib.ticker import FuncFormatter, NullFormatter
 from .models import ReportConfig, SpdData, TouchstoneData
 from .capacitance import component_active, format_capacitance, resolved_capacitance
 from .mapping import group_presentation
+from .touchstone import plot_frequency_bounds, plot_impedance
 
 
 FONT = FontProperties(family="Malgun Gothic", size=15)
@@ -81,22 +82,18 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
     ax = fig.add_subplot(111, facecolor="white")
     unit = "Ω" if config.settings.board_type.upper() == "PCB" else "mΩ"
     factor = 1 if unit == "Ω" else 1000
-    frequency = np.asarray(ts.frequency_hz, dtype=float)
-    in_range = (frequency >= 1e3) & (frequency <= 1e9)
     plotted = 0
     for m in mappings:
         if not 1 <= m.port_index <= len(ts.ports):
             raise ValueError(f"Touchstone 포트 범위 오류: {m.port_index}")
-        magnitude = np.abs(np.asarray(ts.z_diagonal[:, m.port_index - 1])) * factor
-        valid = in_range & np.isfinite(frequency) & np.isfinite(magnitude) & (magnitude > 0)
-        if not valid.any():
+        frequency, magnitude = plot_impedance(ts, m.port_index)
+        if not np.isfinite(magnitude).any():
             continue
-        y = np.where(valid, magnitude, np.nan)
         site_index = sites.index(m.site)
         color_index = site_index if len(channels) == 1 else channels.index(m.channel)
         style_index = site_index // len(COLORS) if len(channels) == 1 else site_index
         style = "solid" if style_index == 0 else (0, (1 + style_index // 4, 1 + style_index % 4))
-        ax.plot(frequency / 1e6, y, color=COLORS[color_index % len(COLORS)],
+        ax.plot(frequency / 1e6, magnitude * factor, color=COLORS[color_index % len(COLORS)],
                 linestyle=style, linewidth=.85,
                 label=f"{m.display_name.strip()} ({m.channel}) / {m.site}"
                 if m.display_name.strip() else f"{m.channel} / {m.site}")
@@ -108,9 +105,9 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
     for axis in (ax.xaxis, ax.yaxis):
         axis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:g}"))
         axis.set_minor_formatter(NullFormatter())
-    valid_frequencies = frequency[in_range & np.isfinite(frequency)]
-    if len(valid_frequencies) > 1:
-        ax.set_xlim(valid_frequencies.min() / 1e6, valid_frequencies.max() / 1e6)
+    bounds = plot_frequency_bounds(ts.frequency_hz)
+    if bounds and bounds[0] < bounds[1]:
+        ax.set_xlim(bounds[0] / 1e6, bounds[1] / 1e6)
     ax.set_title(title, fontproperties=TITLE_FONT, pad=15, parse_math=False)
     if show_names:
         legend = ax.legend(handles=ax.lines, labels=[line.get_label() for line in ax.lines],

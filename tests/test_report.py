@@ -20,6 +20,22 @@ def data():
     return config, ts
 
 
+def test_sweep_note_shows_report_band_and_plot_includes_upper_decade(tmp_path):
+    config, ts = data()
+    ts.frequency_hz = np.array([.1, 1e5, 1e8, 1.5e9, 3e9])
+    ts.z_diagonal[:3] = np.nan
+    result = build_report(config, None, ts, tmp_path / "sweep.xlsx")
+    assert "VDD" in result.sheets  # Only the new upper part of the plot band is valid.
+    ts.z_diagonal[:] = 1
+    result = build_report(config, None, ts, tmp_path / "summary.xlsx")
+    book = openpyxl.load_workbook(result.path)
+    try:
+        for name in ("PI ALL@100MHz", "PI ALL"):
+            assert book[name]["A2"].value == "* 1kHz ~ 2GHz : Automatic Frequency Sweep"
+    finally:
+        book.close()
+
+
 def test_units_spots_formula_metrics_and_same_chart_source(tmp_path):
     config, ts = data()
     config.settings.board_type = "PCB"

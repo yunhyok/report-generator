@@ -4,12 +4,13 @@ from pathlib import Path
 import subprocess
 import sys
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.comments import Comment
 import pytest
 
 from report_generator.core.models import ChannelMapping, DcrRow, ReportConfig, source_signature
 from report_generator.core.project import save_project
-from report_generator.validation import inspect_workbook, validate_project
+from report_generator.validation import compare_values, inspect_workbook, validate_project
 
 
 def project(tmp_path):
@@ -242,3 +243,84 @@ def test_reference_tables_keep_channels_after_rank_section_breaks(tmp_path):
     for kind in ("PI", "PI100"):
         assert values[kind]["AUX", "SITE0", "100MHz"]["value"] == pytest.approx(.03)
         assert values[kind]["MAIN", "SITE0", "100MHz"]["value"] == pytest.approx(.02)
+
+
+def test_tagged_alias_comments_preserve_distinct_literal_channel_keys_in_all_tables(tmp_path):
+    def make_book(path, aliases):
+        book = Workbook()
+        book.remove(book.active)
+        channels = ["=RAW_CHANNEL_001", "RAW / [literal]"]
+        for title in ("PI ALL", "PI ALL@100MHz", "DCR", "CAP_수량", "Wide detail"):
+            sheet = book.create_sheet(title)
+            if title == "PI ALL":
+                sheet.append(["Channel / [Ω]", "SITE", "100MHz"])
+            elif title in ("PI ALL@100MHz", "DCR"):
+                sheet.append(["Channel / [Ω]", "SITE0"])
+            elif title == "CAP_수량":
+                sheet.append(["Channel", "100 nF"])
+                sheet.append([None, "SITE0"])
+            for index, channel in enumerate(channels):
+                alias = "=Shared / [mΩ]" if aliases else channel
+                if title == "Wide detail":
+                    column = 1 + index * 2
+                    cell = sheet.cell(1, column, f"{alias} / [Ω]")
+                    sheet.cell(2, column, "SITE")
+                    sheet.cell(2, column + 1, "100MHz")
+                    sheet.cell(3, column, "SITE0")
+                    sheet.cell(3, column + 1, index + 1)
+                else:
+                    row = index + (3 if title == "CAP_수량" else 2)
+                    cell = sheet.cell(row, 1, alias)
+                    if title == "PI ALL":
+                        sheet.cell(row, 2, "SITE0")
+                        sheet.cell(row, 3, index + 1)
+                    else:
+                        sheet.cell(row, 2, index + 1)
+                cell.data_type = "s"
+                if aliases:
+                    cell.comment = Comment(channel, "SPD Report Generator")
+        book.save(path)
+        book.close()
+
+    reference, renamed = tmp_path / "raw.xlsx", tmp_path / "aliases.xlsx"
+    make_book(reference, False)
+    make_book(renamed, True)
+    expected, _ = inspect_workbook(reference)
+    actual, _ = inspect_workbook(renamed)
+    for kind in actual:
+        assert {key[0] for key in actual[kind]} == {"=RAW_CHANNEL_001", "RAW / [literal]"}
+        check = compare_values(actual[kind], expected[kind])
+        assert check["matches"] == 2
+        assert not (check["differences"] or check["missing"] or check["extra"])
+    assert actual["PI_DETAIL"]["RAW / [literal]", "SITE0", "100MHz"]["value"] == 2
+
+
+@pytest.mark.parametrize("author", ["Other Application", "SPD Report Generator "])
+def test_unrecognized_channel_comments_do_not_override_legacy_labels(tmp_path, author):
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "DCR"
+    sheet.append(["Channel / [Ω]", "SITE0"])
+    sheet.append(["ORIGINAL", 2])
+    sheet["A2"].comment = Comment("UNRELATED", author)
+    path = tmp_path / "foreign-comment.xlsx"
+    book.save(path)
+    book.close()
+    values, _ = inspect_workbook(path)
+    assert set(values["DCR"]) == {("ORIGINAL", "SITE0")}
+
+
+def test_nonchannel_comments_do_not_change_measurements_or_sites(tmp_path):
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "PI ALL"
+    sheet.append([None, "Unrelated note"])
+    sheet.append(["Channel / [Ω]", "SITE", "100MHz"])
+    sheet.append(["ORIGINAL", "SITE0", 2])
+    for coordinate in ("B1", "B3", "C3"):
+        sheet[coordinate].comment = Comment("UNRELATED", "SPD Report Generator")
+    path = tmp_path / "nonchannel-comment.xlsx"
+    book.save(path)
+    book.close()
+    values, _ = inspect_workbook(path)
+    assert values["PI"]["ORIGINAL", "SITE0", "100MHz"]["value"] == 2

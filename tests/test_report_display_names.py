@@ -70,8 +70,10 @@ def test_split_groups_with_same_alias_keep_distinct_sheets_and_preview_images(tm
     try:
         for name in report.sheets[-2:]:
             assert book[name]["A1"].value == "Common_alias"
-        assert book["Common_alias"]["P5"].value == "RAW"
-        assert book["Common_alias (2)"]["P5"].value == "RAW"
+        assert book["Common_alias"]["P5"].value == "Common_alias"
+        assert book["Common_alias (2)"]["P5"].value == "Common_alias"
+        assert book["Common_alias"]["P5"].comment.text == "RAW"
+        assert book["Common_alias (2)"]["P5"].comment.text == "RAW"
         assert book["Common_alias"]["Q5"].value == 0
         assert book["Common_alias (2)"]["Q5"].value == 1
     finally:
@@ -86,7 +88,10 @@ def test_partial_site_alias_keeps_group_and_numeric_identity(tmp_path):
     book = load_workbook(result.path)
     try:
         assert book["Original"]["A1"].value == "Original"
-        assert book["Original"]["P5"].value == "RAW"
+        assert book["Original"]["P5"].value == "Only_SITE0"
+        assert book["Original"]["P5"].comment.text == "RAW"
+        assert book["Original"]["P6"].value == "RAW"
+        assert book["Original"]["P6"].comment is None
         assert book["Original"]["Q5"].value == 0
         assert book["Original"]["Q6"].value == 1
     finally:

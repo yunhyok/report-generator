@@ -7,6 +7,9 @@ import pytest
 from report_generator.core.models import (ChannelMapping, Component, PadShape, Port, ReportConfig,
     SpiceModel, SpdData, SurfacePad, TouchstoneData)
 from report_generator.core import render
+from report_generator.core.touchstone import (
+    PLOT_POINTS_PER_DECADE, interpolate_impedance, plot_frequency_bounds, plot_impedance,
+)
 
 
 @pytest.mark.parametrize("names,title,legend", [
@@ -118,6 +121,7 @@ def test_group_plot_selected_ports_units_and_gaps(tmp_path, monkeypatch):
     def capture(canvas, filename, *args, **kwargs):
         ax = canvas.figure.axes[0]
         captured["lines"] = [(line.get_label(), line.get_ydata().copy()) for line in ax.lines]
+        captured["frequencies"] = ax.lines[0].get_xdata() * 1e6
         captured["background"] = canvas.figure.get_facecolor()
         captured["markers"] = [line.get_marker() for line in ax.lines]
         return original(canvas, filename, *args, **kwargs)
@@ -127,10 +131,85 @@ def test_group_plot_selected_ports_units_and_gaps(tmp_path, monkeypatch):
     assert captured["lines"][0][0] == "VDD / 0"
     values = captured["lines"][0][1]
     assert values[0] == pytest.approx(1000 * 2**.5)
-    assert np.isnan(values[1])
-    assert values[2] == 5000
+    assert values[-1] == 5000
+    assert np.isnan(values[1:-1]).all()
+    assert 1e6 in captured["frequencies"]
     assert captured["background"] == (1, 1, 1, 1)
     assert captured["markers"] == ["None"]
+
+
+def test_display_sampling_keeps_raw_extrema_boundaries_and_minimum_log_density():
+    ts = TouchstoneData("synthetic", {}, [Port(1, "P1")],
+                       np.array([0., 1e4, 1.23e6, 1.24e6, 4e9]),
+                       np.array([[1 + 1j], [2 + 2j], [100], [1 + 3j], [4 + 4j]]))
+    before_f, before_z = ts.frequency_hz.copy(), ts.z_diagonal.copy()
+    before_pi = interpolate_impedance(ts, 1, 1e8)
+    frequency, magnitude = plot_impedance(ts, 1)
+    assert frequency[0] == 1e3 and frequency[-1] == 2e9
+    assert np.max(frequency[1:] / frequency[:-1]) <= 10 ** (1 / PLOT_POINTS_PER_DECADE) * (1 + 1e-12)
+    for original_f, original_z in zip(before_f[1:-1], before_z[1:-1, 0]):
+        assert magnitude[np.flatnonzero(frequency == original_f)[0]] == abs(original_z)
+    assert magnitude[np.flatnonzero(frequency == 1.23e6)[0]] == 100
+    for boundary in (1e3, 2e9):
+        assert magnitude[np.flatnonzero(frequency == boundary)[0]] == pytest.approx(interpolate_impedance(ts, 1, boundary)[0])
+    assert magnitude[5] == pytest.approx(interpolate_impedance(ts, 1, float(frequency[5]))[0])
+    np.testing.assert_array_equal(ts.frequency_hz, before_f)
+    np.testing.assert_array_equal(ts.z_diagonal, before_z)
+    assert interpolate_impedance(ts, 1, 1e8) == before_pi
+
+
+def test_display_sampling_does_not_interpolate_across_zero_or_invalid_source_points():
+    ts = TouchstoneData("synthetic", {}, [Port(1, "P1")],
+                       np.array([100., 2e3, 3e3, 4e3, 5e3, 1e4, 3e9]),
+                       np.array([[np.nan], [1], [0], [2], [np.nan], [3], [4]], dtype=complex))
+    frequency, magnitude = plot_impedance(ts, 1)
+    assert np.isnan(magnitude[0])  # The 1kHz boundary is bracketed by an invalid sample.
+    assert magnitude[frequency == 2e3][0] == 1
+    assert magnitude[frequency == 4e3][0] == 2
+    gaps = ((frequency > 2e3) & (frequency < 4e3)) | ((frequency > 4e3) & (frequency < 1e4))
+    assert np.isnan(magnitude[gaps]).all()
+    assert np.isnan(magnitude[frequency == 3e3][0])
+    continuous = np.isfinite(magnitude[:-1]) & np.isfinite(magnitude[1:])
+    assert np.max((frequency[1:] / frequency[:-1])[continuous]) <= 10 ** (1 / 30) * (1 + 1e-12)
+    ts.z_diagonal[-1, 0] = 0
+    _, invalid_upper = plot_impedance(ts, 1)
+    assert np.isnan(invalid_upper[-1])  # A zero beyond 2GHz also blocks boundary interpolation.
+
+
+@pytest.mark.parametrize("count", [31, 121, 1001])
+def test_dense_display_decade_retains_exact_original_points(count):
+    frequency = np.geomspace(1e3, 1e4, count)
+    z = (np.arange(count) + 1j * np.arange(count, 0, -1))[:, None]
+    ts = TouchstoneData("synthetic", {}, [Port(1, "P1")], frequency, z)
+    plotted_f, plotted_y = plot_impedance(ts, 1)
+    np.testing.assert_array_equal(plotted_f, frequency)
+    np.testing.assert_array_equal(plotted_y, np.abs(z[:, 0]))
+
+
+@pytest.mark.parametrize("coverage,expected", [
+    ([100., 4e9], (1e3, 2e9)), ([5e3, 8e8], (5e3, 8e8)),
+    ([2e3], (2e3, 2e3)), ([0., 500.], None), ([3e9, 4e9], None),
+])
+def test_plot_source_coverage_and_sparse_bracketing(tmp_path, monkeypatch, coverage, expected):
+    ts = TouchstoneData("synthetic", {}, [Port(1, "P1")], np.array(coverage),
+                       np.ones((len(coverage), 1), dtype=complex))
+    assert plot_frequency_bounds(ts.frequency_hz) == expected
+    frequency, magnitude = plot_impedance(ts, 1)
+    if expected is None:
+        assert not frequency.size and not magnitude.size
+        return
+    assert (frequency[0], frequency[-1]) == expected
+    assert np.all(magnitude == 1)
+    config = ReportConfig(mappings=[ChannelMapping(1, site="SITE0", channel="RAW", group="G")])
+    def capture(figure, path):
+        line = figure.axes[0].lines[0]
+        np.testing.assert_array_equal(line.get_xdata(), frequency / 1e6)
+        np.testing.assert_array_equal(line.get_ydata(), magnitude * 1000)
+        if expected[0] < expected[1]:
+            assert figure.axes[0].get_xlim() == (expected[0] / 1e6, expected[1] / 1e6)
+        return str(path)
+    monkeypatch.setattr(render, "_finish", capture)
+    render.render_group_plot(ts, config, "G", tmp_path / "coverage.png")
 
 
 @pytest.mark.parametrize("board_type,fonts", [("MLO", (26, 14.5, 14, 15, 15)), ("PCB", (26, 9, 14, 10, 15))])

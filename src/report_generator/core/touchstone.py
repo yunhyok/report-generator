@@ -11,6 +11,9 @@ from .models import Cancelled, Port, Progress, TouchstoneData, checkpoint, sourc
 
 _MAX_PORTS = 1024
 _MAX_RECORD_BYTES = 64 * 1024 * 1024
+PLOT_MIN_HZ = 1e3
+PLOT_MAX_HZ = 2e9
+PLOT_POINTS_PER_DECADE = 30
 
 
 def _options(line: bytes) -> tuple[float, str, float]:
@@ -163,6 +166,51 @@ def read_touchstone(path: str | Path, progress: Progress | None = None,
                   descriptions[i - 1] if len(descriptions) == n else "") for i in range(1, n + 1)]
     return TouchstoneData(str(path), signature, ports, np.asarray(frequencies),
                           np.asarray(diagonals), options[2], notes)
+
+
+def plot_frequency_bounds(frequency_hz) -> tuple[float, float] | None:
+    frequencies = np.asarray(frequency_hz, dtype=float)
+    frequencies = frequencies[np.isfinite(frequencies) & (frequencies >= 0)]
+    if not frequencies.size:
+        return None
+    lower, upper = max(PLOT_MIN_HZ, float(frequencies.min())), min(PLOT_MAX_HZ, float(frequencies.max()))
+    return (lower, upper) if lower <= upper else None
+
+
+def plot_impedance(data: TouchstoneData, port_index: int) -> tuple[np.ndarray, np.ndarray]:
+    """Densify display points only; interpolate complex Z linearly within valid source pairs."""
+    indices = {port.index: i for i, port in enumerate(data.ports)}
+    if isinstance(port_index, bool) or not isinstance(port_index, int) or port_index not in indices:
+        raise ValueError("선택한 Touchstone 포트 번호가 없습니다.")
+    frequency = np.asarray(data.frequency_hz, dtype=float)
+    bounds = plot_frequency_bounds(frequency)
+    if bounds is None:
+        return np.array([], dtype=float), np.array([], dtype=float)
+    lower, upper = bounds
+    z = np.asarray(data.z_diagonal[:, indices[port_index]])
+    magnitude = np.abs(z)
+    valid = np.isfinite(frequency) & np.isfinite(z) & np.isfinite(magnitude) & (magnitude > 0)
+    parts = [frequency[(frequency >= lower) & (frequency <= upper)], np.array([lower, upper])]
+    starts, ends = np.maximum(frequency[:-1], lower), np.minimum(frequency[1:], upper)
+    sparse = (valid[:-1] & valid[1:] & (ends > starts)
+              & (ends / starts > 10 ** (1 / PLOT_POINTS_PER_DECADE) * (1 + 1e-12)))
+    for index in np.flatnonzero(sparse):
+        intervals = int(np.ceil(np.log10(ends[index] / starts[index]) * PLOT_POINTS_PER_DECADE))
+        parts.append(np.geomspace(starts[index], ends[index], intervals + 1)[1:-1])
+    points = np.unique(np.concatenate(parts))
+    insertion = np.searchsorted(frequency, points)
+    right = np.minimum(insertion, len(frequency) - 1)
+    left = np.maximum(insertion - 1, 0)
+    exact = frequency[right] == points
+    y = np.full(points.shape, np.nan)
+    original = exact & valid[right]
+    y[original] = magnitude[right[original]]
+    between = ~exact & (insertion > 0) & (insertion < len(frequency)) & valid[left] & valid[right]
+    fraction = (points[between] - frequency[left[between]]) / (frequency[right[between]] - frequency[left[between]])
+    with np.errstate(over="ignore", invalid="ignore"):
+        interpolated = np.abs(z[left[between]] + fraction * (z[right[between]] - z[left[between]]))
+    y[between] = np.where(np.isfinite(interpolated) & (interpolated > 0), interpolated, np.nan)
+    return points, y
 
 
 def interpolate_impedance(data: TouchstoneData, port_index: int,

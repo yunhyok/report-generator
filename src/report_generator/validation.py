@@ -64,6 +64,12 @@ def _put(records, key, cell, scale=1.):
         records[key] = {"value": float(cell.value) * scale, "sheet": cell.parent.title, "cell": cell.coordinate}
 
 
+def _channel(cell):
+    if cell.comment and cell.comment.author == "SPD Report Generator":
+        return cell.comment.text
+    return cell.value.strip() if isinstance(cell.value, str) else None
+
+
 def _pi_tables(sheet):
     result = {}
     for header in sheet.iter_rows():
@@ -74,12 +80,16 @@ def _pi_tables(sheet):
             frequencies = [(c.column, _frequency(c.value)) for c in header[col:col + 6] if _frequency(c.value)]
             if not frequencies:
                 continue
-            above = sheet.cell(row - 1, col).value if row > 1 else None
-            fixed = above.split(" / [", 1)[0].strip() if isinstance(above, str) and " / [" in above else None
+            above_cell = sheet.cell(row - 1, col) if row > 1 else None
+            above = above_cell.value if above_cell is not None else None
+            fixed = (above.rsplit(" / [", 1)[0].strip()
+                     if isinstance(above, str) and " / [" in above else None)
+            if fixed is not None and above_cell.comment and above_cell.comment.author == "SPD Report Generator":
+                fixed = _channel(above_cell)
             channel_col = next((c.column for c in reversed(header[:col - 1]) if isinstance(c.value, str) and c.value.upper().startswith("CHANNEL")), None)
             if not fixed and channel_col is None:
                 continue
-            unit = above if fixed else sheet.cell(row, channel_col).value
+            unit = above.rsplit(" / ", 1)[-1] if fixed else sheet.cell(row, channel_col).value
             if "[" not in str(unit):
                 unit = sheet.cell(row, frequencies[0][0]).value
             channel = fixed
@@ -92,7 +102,7 @@ def _pi_tables(sheet):
                 if raw_site is None or str(raw_site).upper() == "SITE":
                     break
                 if not fixed and isinstance(sheet.cell(r, channel_col).value, str):
-                    channel = sheet.cell(r, channel_col).value.strip()
+                    channel = _channel(sheet.cell(r, channel_col))
                 if channel:
                     for c, label in frequencies:
                         _put(result, (channel, _site(raw_site), label), sheet.cell(r, c), _scale(unit))
@@ -125,11 +135,11 @@ def _matrix_tables(sheet, cap=False, site_names=()):
                 continue
         end = headers[index + 1][0] if index + 1 < len(headers) else sheet.max_row + 1
         for r in range(row + 1, end):
-            channel = sheet.cell(r, col).value
-            if not isinstance(channel, str) or not channel.strip():
+            channel = _channel(sheet.cell(r, col))
+            if not channel:
                 continue
             for c, site in sites:
-                key = (channel.strip(), site, nominal) if cap else (channel.strip(), site)
+                key = (channel, site, nominal) if cap else (channel, site)
                 _put(result, key, sheet.cell(r, c), 1. if cap else _scale(label))
     # Zero count cells are table padding, not additional capacitor groups.
     return {key: item for key, item in result.items() if not cap or item["value"] != 0}
