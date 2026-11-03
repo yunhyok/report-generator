@@ -73,11 +73,11 @@ def test_units_spots_formula_metrics_and_same_chart_source(tmp_path):
     w.close()
 
 
-def test_dcr_only_and_literal_formula_strings(tmp_path):
+def test_dcr_with_empty_spd_and_literal_formula_strings(tmp_path):
     config = ReportConfig(dcr=[DcrRow("0", "=SUM(1,2)", 12.5)])
     spd = SpdData("synthetic.spd", {}, warnings=["Board outline unavailable."])
     result = build_report(config, spd, None, tmp_path / "dcr.xlsx")
-    assert result.sheets == ["DCR"]
+    assert result.sheets == ["DCR", "CAP_배치도면"]
     w = openpyxl.load_workbook(result.path)
     assert w["DCR"]["C5"].data_type == "s"
     assert w["DCR"]["C5"].value == "=SUM(1,2)"
@@ -141,7 +141,7 @@ def test_caps_active_override_and_placement(tmp_path):
     assert w["CAP_수량"]["C8"].value == "Unknown"
     assert w["CAP_수량"]["C10"].value == 1
     assert "B4:B5" in w["CAP_수량"].merged_cells
-    assert len(w["CAP_배치도면"]._images) == 1
+    assert [image.anchor._from.col for image in w["CAP_배치도면"]._images] == [1, 15]
     cap_notes = " ".join(str(c.value) for row in w["CAP_수량"] for c in row if c.value is not None)
     assert "Model nominal requires review." not in cap_notes and "Board outline unavailable." not in cap_notes
     assert "외곽선" not in cap_notes
@@ -157,8 +157,8 @@ def test_empty_and_invalid_dcr_rejected(tmp_path):
         build_report(config, None, None, tmp_path / "invalid.xlsx")
 
 
-@pytest.mark.parametrize("board_type,image_count", [("MLO", 1), ("PCB", 2)])
-def test_general_component_geometry_without_mapping_is_valid_partial_report(tmp_path, board_type, image_count):
+@pytest.mark.parametrize("board_type", ["MLO", "PCB"])
+def test_general_component_geometry_without_mapping_is_valid_partial_report(tmp_path, board_type):
     spd = SpdData("synthetic.spd", {}, components=[
         Component("U1", "chip", x_mm=10, y_mm=20, width_mm=3, height_mm=4),
         Component("J1", "connector", x_mm=30, y_mm=20, side="Bottom")])
@@ -168,9 +168,46 @@ def test_general_component_geometry_without_mapping_is_valid_partial_report(tmp_
     assert pages == ["CAP_배치도면"]
     result = build_report(config, spd, None, tmp_path / "geometry.xlsx")
     w = openpyxl.load_workbook(result.path)
-    assert len(w["CAP_배치도면"]._images) == image_count
-    if image_count == 2:
-        assert w["CAP_배치도면"]._images[1].anchor._from.col == 15
+    images = w["CAP_배치도면"]._images
+    assert [image.anchor._from.col for image in images] == [1, 15]
+    w.close()
+
+
+@pytest.mark.parametrize("board_type,side", [("MLO", "Top"), ("MLO", "Bottom"), ("PCB", "Top"), ("PCB", "Bottom")])
+def test_one_sided_geometry_keeps_independent_top_and_bottom_panels(tmp_path, board_type, side):
+    spd = SpdData("synthetic.spd", {}, components=[Component("U1", "chip", x_mm=10, y_mm=20,
+        width_mm=3, height_mm=4, side=side)])
+    config = ReportConfig()
+    config.settings.board_type = board_type
+    result = build_report(config, spd, None, tmp_path / f"{board_type}-{side}.xlsx")
+    w = openpyxl.load_workbook(result.path)
+    images = w["CAP_배치도면"]._images
+    assert [image.anchor._from.col for image in images] == [1, 15]
+    assert images[0] is not images[1]
+    assert images[0]._data() != images[1]._data()
+    images.pop(0)
+    assert len(images) == 1 and images[0].anchor._from.col == 15
+    w.close()
+
+
+@pytest.mark.parametrize("board_type", ["MLO", "PCB"])
+def test_empty_spd_still_has_two_placement_panels(tmp_path, board_type):
+    config = ReportConfig()
+    config.settings.board_type = board_type
+    result = build_report(config, SpdData("empty.spd", {}), None, tmp_path / f"empty-{board_type}.xlsx")
+    w = openpyxl.load_workbook(result.path)
+    assert [image.anchor._from.col for image in w["CAP_배치도면"]._images] == [1, 15]
+    assert all(image._data() for image in w["CAP_배치도면"]._images)
+    w.close()
+
+
+def test_no_spd_omits_placement_panels(tmp_path):
+    config, ts = data()
+    pages, _ = plan_pages(config, None, ts)
+    assert "CAP_배치도면" not in pages
+    result = build_report(config, None, ts, tmp_path / "no-spd.xlsx")
+    w = openpyxl.load_workbook(result.path)
+    assert "CAP_배치도면" not in w.sheetnames
     w.close()
 
 

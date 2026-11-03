@@ -93,7 +93,8 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 runner.start("preview", {"config": config, "spd": spd, "ts": ts, "folder": str(folder)})
             else:
                 report, images = result
-                assert len(report.sheets) == 6 and len(images) == 2
+                assert len(report.sheets) == 6 and len(images) == 3
+                assert [label for label, _ in images[:2]] == ["CAP Top", "CAP Bottom"]
                 book = load_workbook(report.path, data_only=True)
                 pi = book["PI ALL@100MHz"]
                 assert book["VDD_CORE_IO"]["A1"].value == "VDD_CORE_IO"

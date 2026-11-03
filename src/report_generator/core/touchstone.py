@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .models import Cancelled, Port, Progress, TouchstoneData, checkpoint, source_signature
+from .models import Cancelled, Port, Progress, ReportConfig, TouchstoneData, checkpoint, source_signature
 
 _MAX_PORTS = 1024
 _MAX_RECORD_BYTES = 64 * 1024 * 1024
@@ -221,9 +221,12 @@ def interpolate_impedance(data: TouchstoneData, port_index: int,
         raise ValueError("선택한 Touchstone 포트 번호가 없습니다.")
     if not math.isfinite(frequency_hz) or frequency_hz < 0:
         raise ValueError("조회 주파수는 유한한 0 이상의 값이어야 합니다.")
+    return _interpolate_column(data, indices[port_index], frequency_hz)
+
+
+def _interpolate_column(data: TouchstoneData, column: int, frequency_hz: float) -> tuple[float | None, bool]:
     frequencies = data.frequency_hz
     i = int(np.searchsorted(frequencies, frequency_hz))
-    column = indices[port_index]
     if i < len(frequencies) and frequencies[i] == frequency_hz:
         z = data.z_diagonal[i, column]
         return (float(abs(z)), False) if np.isfinite(z) else (None, False)
@@ -234,3 +237,20 @@ def interpolate_impedance(data: TouchstoneData, port_index: int,
         return None, False
     fraction = (frequency_hz - frequencies[i - 1]) / (frequencies[i] - frequencies[i - 1])
     return float(abs(left + fraction * (right - left))), True
+
+
+def pi_display_units(data: TouchstoneData | None, config: ReportConfig) -> tuple[int, str]:
+    """Choose one PI scale from all selected measured ports; raw Z stays in ohms."""
+    if config.settings.board_type.upper() != "PCB":
+        return 1000, "mΩ"
+    if data is None:
+        return 1, "Ω"
+    indices = {port.index: i for i, port in enumerate(data.ports)}
+    ports = {m.port_index for m in config.mappings if m.selected and m.confirmed and m.port_index is not None}
+    if not ports or not ports <= indices.keys():
+        return 1, "Ω"
+    for port in ports:
+        value, _ = _interpolate_column(data, indices[port], 1e8)
+        if value is None or not math.isfinite(value) or value >= 1:
+            return 1, "Ω"
+    return 1000, "mΩ"

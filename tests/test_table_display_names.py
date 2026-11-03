@@ -76,10 +76,10 @@ def test_all_table_labels_use_display_names_without_changing_numeric_identity(tm
                     check_label(changed["PI ALL"].cell(5 + index * site_count + site, 2 + use_priority), per_site, channel)
             else:
                 cell = changed["PI ALL"].cell(4 + use_priority, 2 + index * 7)
-                check_label(cell, f"{display} / [{'Ω' if board_type == 'PCB' else 'mΩ'}]", channel)
+                check_label(cell, f"{display} / [mΩ]", channel)
                 assert cell.comment.text == channel
                 baseline_cell = original["PI ALL"].cell(4 + use_priority, 2 + index * 7)
-                assert baseline_cell.value == f"{channel} / [{'Ω' if board_type == 'PCB' else 'mΩ'}]"
+                assert baseline_cell.value == f"{channel} / [mΩ]"
                 assert baseline_cell.comment is None
             for sheet in changed:
                 assert all(dim.height is None or dim.height <= 409 for dim in sheet.row_dimensions.values())

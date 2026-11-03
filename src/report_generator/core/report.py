@@ -16,10 +16,10 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.views import Selection
 
 from .models import ReportConfig, ReportResult, SpdData, TouchstoneData, checkpoint
-from .render import placement_components, render_group_plot, render_placement
+from .render import PLACEMENT_SIDES, render_group_plot, render_placement
 from .capacitance import summarize_caps
 from .mapping import group_presentation, priority_value
-from .touchstone import interpolate_impedance, plot_frequency_bounds, plot_impedance
+from .touchstone import interpolate_impedance, pi_display_units, plot_frequency_bounds, plot_impedance
 
 
 FREQUENCIES = (1e5, 1e6, 1e7, 1e8, 1e9)
@@ -171,15 +171,10 @@ def _plan(config, spd, ts):
         add("cap", "CAP_수량", caps)
     else:
         omitted["CAP_수량"] = "선택한 채널/사이트의 활성 커패시터 수량이 없습니다."
-    sides = []
     if spd is not None:
-        for side in (("Top", "Bottom") if config.settings.board_type == "PCB" else ("Top",)):
-            if placement_components(spd, config, side):
-                sides.append(side)
-    if sides:
-        add("placement", "CAP_배치도면", sides)
+        add("placement", "CAP_배치도면", PLACEMENT_SIDES)
     else:
-        omitted["CAP_배치도면"] = "표시할 부품 좌표가 없습니다."
+        omitted["CAP_배치도면"] = "배치도에 사용할 SPD 입력이 없습니다."
     for group, maps in plot_groups(config, ts).items():
         valid = any(np.any(plot_impedance(ts, m.port_index)[1] > 0) for m in maps)
         if valid:
@@ -355,14 +350,15 @@ def _deviation(spots):
     return (max(values) - average) / average if average else None
 
 
-def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, channel_order=(), use_priority=False):
+def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, channel_order=(), use_priority=False, pcb=None):
     channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
     by_channel = {channel: [spot for spot in spots if spot[0].channel == channel] for channel in channels}
     labels = [mapping.display_name.strip() or mapping.channel for mapping, _, _ in spots]
     priorities = _channel_priorities([m for m, _, _ in spots], use_priority)
     sections = _sections(channels, priorities, use_priority)
+    pcb = unit == "Ω" if pcb is None else pcb
     number_format = "0.0_ " if wide and unit == "mΩ" else NUMBER
-    if not wide or (detail and unit == "mΩ"):
+    if not wide or (detail and not pcb):
         priority = use_priority
         headers = (["Priority"] if priority else []) + [f"Channel / [{unit}]", "SITE", *FREQUENCY_LABELS]
         if not detail:
@@ -546,8 +542,8 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
     pages, omitted = _plan(config, spd, ts)
     if not pages:
         raise ValueError("보고서를 만들 유효한 데이터가 없습니다. 입력과 채널 매핑을 확인하세요.")
-    factor = 1 if config.settings.board_type.upper() == "PCB" else 1000
-    unit = "Ω" if factor == 1 else "mΩ"
+    factor, unit = pi_display_units(ts, config)
+    pcb = config.settings.board_type.upper() == "PCB"
     warnings = list(dict.fromkeys([*(spd.warnings if spd else []), *(ts.warnings if ts else [])]))
     if any(any(flags) for _, _, flags in _spot_rows(config, ts)):
         warnings.append("일부 기준 주파수 값에 복소 Z 선형 보간을 적용했습니다.")
@@ -572,7 +568,7 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                 elif kind == "pi":
                     _write_pi(ws, payload, factor, unit,
                               wide=len({mapping.site for mapping, _, _ in payload}) > 8,
-                              use_priority=config.settings.use_priority)
+                              use_priority=config.settings.use_priority, pcb=pcb)
                 elif kind == "dcr":
                     _write_dcr(ws, payload, config)
                 elif kind == "cap":
@@ -583,13 +579,14 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                         path = render_placement(spd, config, side, Path(images) / f"placement-{side}.png")
                         image_bottom = max(image_bottom, _add_image(ws, path, "B4" if side_index == 0 else "P4", max_width=850))
                 elif kind == "group":
-                    path = render_group_plot(ts, config, group, Path(images) / f"group-{index}.png")
+                    path = render_group_plot(ts, config, group, Path(images) / f"group-{index}.png",
+                                             display_units=(factor, unit))
                     image_bottom = _add_image(ws, path, "B4")
                     _write_pi(ws, [(m, values, flags) for m, values, flags in _spot_rows(config, ts)
                                    if m.group == group], factor, unit, column=16,
                               wide=len({mapping.site for mapping in _mappings(config, ts)}) > 8, detail=True,
                               channel_order=list(dict.fromkeys(mapping.channel for mapping in _mappings(config, ts))),
-                              use_priority=config.settings.use_priority)
+                              use_priority=config.settings.use_priority, pcb=pcb)
                 last_column = max(ws.max_column, 30 if kind == "placement" else 23 if kind == "group" else 2)
                 ws.print_area = f"A1:{get_column_letter(last_column)}{max(ws.max_row, image_bottom)}"
             checkpoint(cancel)

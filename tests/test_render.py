@@ -330,13 +330,203 @@ def test_capacity_legend_counts_only_visible_active_caps_on_each_side(tmp_path, 
     assert {"100nF (2)", "Unknown capacitance (1)"}.issubset(captured["labels"])
 
 
-def test_alias_placement_selection_and_empty_errors(tmp_path):
+def test_alias_placement_selection_and_invalid_side(tmp_path):
     config = ReportConfig(mappings=[ChannelMapping(site="0", channel="VDD", net="alias")])
     spd = SpdData("synthetic.spd", {}, aliases={"alias": ["VDD"]},
         components=[Component("C1", "C", ["VDD", "GND"], x_mm=1, y_mm=2, is_cap=True)])
     assert len(render.placement_components(spd, config, "Top")) == 1
-    with pytest.raises(ValueError, match="좌표"):
-        render.render_placement(spd, config, "Bottom", tmp_path / "no.png")
+    assert not render.placement_components(spd, config, "Bottom")
+    with pytest.raises(ValueError, match="Top 또는 Bottom"):
+        render.render_placement(spd, config, "Left", tmp_path / "no.png")
+
+
+@pytest.mark.parametrize("board_type", ["PCB", "MLO"])
+@pytest.mark.parametrize("side,mirror", [("Top", True), ("Bottom", True), ("Bottom", False)])
+@pytest.mark.parametrize("with_outline", [False, True])
+def test_empty_placement_face_has_honest_label_and_only_true_outline(
+        tmp_path, monkeypatch, board_type, side, mirror, with_outline):
+    opposite = "Bottom" if side == "Top" else "Top"
+    outline = [(10, 20), (40, 20), (40, 35), (10, 35), (10, 20)]
+    spd = SpdData("synthetic.spd", {}, components=[
+        Component("C1", "C", side=opposite, x_mm=100, y_mm=200,
+                  width_mm=2, height_mm=1, is_cap=True,
+                  pads=[SurfacePad("Node1", 100, 200, opposite, PadShape("Circle", 1, 1))]),
+        Component("C2", "C", side=side, is_cap=True),
+    ], outlines=[outline, [(999, 999)]] if with_outline else [])
+    config = ReportConfig()
+    config.settings.board_type = board_type
+    config.settings.bottom_mirror = mirror
+    original = render._finish
+
+    def capture(figure, path):
+        ax = figure.axes[0]
+        assert not render.placement_components(spd, config, side)
+        assert figure.get_facecolor() == ax.get_facecolor() == (0, 0, 0, 1)
+        assert not ax.axison and not figure.legends
+        assert [text.get_text() for text in figure.texts] == [
+            side.upper() + (" · mirrored" if side == "Bottom" and mirror else ""),
+            "No displayable component / pad coordinates",
+        ]
+        assert ax.xaxis_inverted() == (side == "Bottom" and mirror)
+        if with_outline:
+            assert len(ax.collections) == 1
+            np.testing.assert_array_equal(ax.collections[0].get_segments(), [outline])
+            assert ax.dataLim.bounds == pytest.approx((10, 20, 30, 15))
+        else:
+            assert not ax.collections
+            assert not np.isfinite(ax.dataLim.bounds).any()
+        return original(figure, path)
+
+    monkeypatch.setattr(render, "_finish", capture)
+    path = render.render_placement(spd, config, side, tmp_path / "empty-face.png")
+    with Image.open(path) as image:
+        assert image.height == 990
+        assert image.convert("RGB").getpixel((0, 0)) == (0, 0, 0)
+
+
+def test_opposite_body_with_target_face_pads_still_draws_only_target_geometry(tmp_path, monkeypatch):
+    spd = SpdData("synthetic.spd", {}, components=[
+        Component("C1", "C", side="Top", x_mm=1000, y_mm=2000,
+                  width_mm=2, height_mm=2, is_cap=True,
+                  pads=[SurfacePad("Node1", 3, 4, "Bottom", PadShape("Circle", .5, .5))]),
+    ])
+    config = ReportConfig()
+
+    def capture(figure, path):
+        ax = figure.axes[0]
+        assert len(ax.collections) == 1
+        assert ax.dataLim.bounds == pytest.approx((2.75, 3.75, .5, .5))
+        assert ax.xaxis_inverted()
+        assert [text.get_text() for text in figure.texts] == ["BOTTOM · mirrored"]
+        assert not any("Pin bounds" in text.get_text()
+                       for legend in figure.legends for text in legend.get_texts())
+        return str(path)
+
+    monkeypatch.setattr(render, "_finish", capture)
+    render.render_placement(spd, config, "Bottom", tmp_path / "opposite-body.png")
+
+
+@pytest.mark.parametrize("capacitance", [100e-12, 100e-9])
+def test_pale_cap_boundaries_survive_pad_overlays_and_excel_downsize(tmp_path, monkeypatch, capacitance):
+    box = PadShape("Box", 1, .8, ((-.5, -.4), (.5, -.4), (.5, .4), (-.5, .4)))
+    overlay = PadShape("Box", .3, .6, ((-.15, -.3), (.15, -.3), (.15, .3), (-.15, .3)))
+    components = [
+        Component("C1", "C", side="Top", x_mm=-.5, y_mm=0,
+                  width_mm=1, height_mm=.8, is_cap=True,
+                  pads=[SurfacePad("overlay", 0, 0, "Top", overlay)]),
+        Component("C2", "C", side="Top", x_mm=.5, y_mm=0,
+                  width_mm=1, height_mm=.8, is_cap=True),
+        Component("C3", "C", is_cap=True,
+                  pads=[SurfacePad("box-left", -.5, -1.2, "Top", box)]),
+        Component("C4", "C", is_cap=True,
+                  pads=[SurfacePad("box-right", .5, -1.2, "Top", box)]),
+        Component("C5", "C", is_cap=True,
+                  pads=[SurfacePad("circle-left", -.4, -2.4, "Top", PadShape("Circle", .8, .8))]),
+        Component("C6", "C", is_cap=True,
+                  pads=[SurfacePad("circle-right", .4, -2.4, "Top", PadShape("Circle", .8, .8))]),
+        Component("C7", "C", side="Top", x_mm=5, y_mm=0,
+                  width_mm=.05, height_mm=.1, is_cap=True),
+    ]
+    spd = SpdData("synthetic.spd", {}, models={"C": SpiceModel("C", capacitance, valid=True)},
+                  components=components)
+    config = ReportConfig()
+    config.settings.board_type = "PCB"
+    points = [(0, y) for y in (0, -1.2, -2.4)] + [(.25, y) for y in (0, -1.2, -2.4)] + [(5, 0)]
+    captured = {}
+    original = render._finish
+
+    def capture(figure, path):
+        canvas = render.FigureCanvasAgg(figure)
+        canvas.draw()
+        ax = figure.axes[0]
+        captured["points"] = ax.transData.transform(points)
+        pad_collections = [collection for collection in ax.collections
+                           if isinstance(collection, render.EllipseCollection) or
+                           (len(collection.get_facecolors()) and len(collection.get_edgecolors()))]
+        assert len(pad_collections) == 2
+        assert all(np.max(collection.get_edgecolors()[:, :3]) < .1 for collection in pad_collections)
+        assert ax.collections[-1].get_zorder() > max(collection.get_zorder() for collection in pad_collections)
+        return original(figure, path)
+
+    monkeypatch.setattr(render, "_finish", capture)
+    path = render.render_placement(spd, config, "Top", tmp_path / "pale-caps.png")
+    with Image.open(path) as source:
+        assert source.width > 850
+        ratio = 850 / source.width
+        image = source.convert("RGB").resize((850, round(source.height * ratio)), Image.Resampling.LANCZOS)
+        pixels = np.asarray(image)
+        locations = [(round(x * ratio), round((source.height - y) * ratio))
+                     for x, y in captured["points"]]
+    for x, y in locations[:3]:
+        assert pixels[y - 1:y + 2, x - 1:x + 2].mean(axis=2).min() < 130
+    for x, y in locations[3:]:
+        assert pixels[y, x].mean() > 160
+
+
+@pytest.mark.parametrize("feature_width", [.29, .42, .55])
+@pytest.mark.parametrize("rotation", [0, 37])
+def test_two_to_four_pixel_cap_features_keep_fill_and_separators(
+        tmp_path, monkeypatch, feature_width, rotation):
+    angle = np.deg2rad(rotation)
+    direction = np.array([np.cos(angle), np.sin(angle)])
+    vertical = np.array([-np.sin(angle), np.cos(angle)])
+    box = PadShape("Box", feature_width, 1.2,
+                   ((-feature_width/2, -.6), (feature_width/2, -.6),
+                    (feature_width/2, .6), (-feature_width/2, .6)))
+    small = PadShape("Circle", feature_width * .8, feature_width * .8)
+    components = [Component("U1", "IC", x_mm=-50, y_mm=0, width_mm=1, height_mm=1),
+                  Component("U2", "IC", x_mm=50, y_mm=0, width_mm=1, height_mm=1)]
+    samples = []
+    for row, y in enumerate((10, 0, -10)):
+        center = np.array([0, y])
+        for sign in (-1, 1):
+            position = center + sign * feature_width/2 * direction
+            samples.append(position)
+            if row == 0:
+                pads = [SurfacePad(f"internal-{sign}-{i}", *(position + offset * vertical),
+                                   "Top", small) for i, offset in enumerate(np.linspace(-.4, .4, 7))]
+                component = Component(f"C{len(components)}", "C", x_mm=position[0], y_mm=position[1],
+                                      width_mm=feature_width, height_mm=1.2, rotation=rotation,
+                                      is_cap=True, pads=pads)
+            else:
+                shape = box if row == 1 else PadShape("Circle", feature_width, feature_width)
+                component = Component(f"C{len(components)}", "C", is_cap=True, pads=[
+                    SurfacePad(f"pad-{row}-{sign}", *position, "Top", shape, rotation)])
+            components.append(component)
+    spd = SpdData("synthetic.spd", {}, components=components,
+                  models={"C": SpiceModel("C", 100e-9, valid=True)},
+                  outlines=[[(-50, -30), (50, -30), (50, 30), (-50, 30), (-50, -30)]])
+    config = ReportConfig()
+    config.settings.board_type = "PCB"
+    captured = {}
+    original = render._finish
+
+    def capture(figure, path):
+        canvas = render.FigureCanvasAgg(figure)
+        canvas.draw()
+        ax = figure.axes[0]
+        captured["points"] = ax.transData.transform(samples)
+        captured["seams"] = ax.transData.transform([(0, 10), (0, 0)])
+        captured["width"] = feature_width * abs(ax.transData.get_matrix()[0, 0])
+        return original(figure, path)
+
+    monkeypatch.setattr(render, "_finish", capture)
+    path = render.render_placement(spd, config, "Top", tmp_path / "tiny-caps.png")
+    with Image.open(path) as source:
+        ratio = 850 / source.width
+        pixels = np.asarray(source.convert("RGB").resize(
+            (850, round(source.height * ratio)), Image.Resampling.LANCZOS))
+        assert 2 <= captured["width"] * ratio <= 4
+        locations = [(round(x * ratio), round((source.height - y) * ratio))
+                     for x, y in captured["points"]]
+        seams = [(round(x * ratio), round((source.height - y) * ratio))
+                 for x, y in captured["seams"]]
+    for x, y in locations:
+        patch = pixels[y-1:y+2, x-1:x+2].astype(float)
+        assert patch.mean(axis=2).max() > 140
+        assert (patch[:, :, 2] - patch[:, :, 0]).max() > 20
+    for x, y in seams:
+        assert pixels[y-1:y+2, x-1:x+2].mean(axis=2).min() < 180
 
 
 def test_source_labels_are_literal_matplotlib_text(tmp_path):

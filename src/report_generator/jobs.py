@@ -46,7 +46,8 @@ def run_job(action, payload, messages, cancellation):
             from .core.mapping import group_presentation, validate_mappings
             from .core.project import validate_config
             from .core.report import build_report, plot_groups
-            from .core.render import render_placement, render_group_plot, placement_components
+            from .core.render import PLACEMENT_SIDES, render_placement, render_group_plot
+            from .core.touchstone import pi_display_units
             config, spd, ts = payload["config"], payload.get("spd"), payload.get("ts")
             validate_config(config)
             if any(m.selected for m in config.mappings):
@@ -61,22 +62,21 @@ def run_job(action, payload, messages, cancellation):
                 folder.mkdir(parents=True, exist_ok=True)
                 report = build_report(config, spd, ts, folder / "preview.xlsx", progress=progress, cancel=cancellation.is_set)
                 images = []
-                if spd and any(c.x_mm is not None and c.y_mm is not None for c in spd.components):
-                    for side in (["Top", "Bottom"] if config.settings.board_type == "PCB" else ["Top"]):
-                        if not placement_components(spd, config, side):
-                            continue
+                if spd is not None:
+                    for side in PLACEMENT_SIDES:
                         if cancellation.is_set():
                             raise CancelledError("작업이 취소되었습니다.")
                         path = folder / f"placement-{side}.png"
                         render_placement(spd, config, side, path)
                         images.append((f"CAP {side}", str(path)))
+                display_units = pi_display_units(ts, config)
                 for index, (group, members) in enumerate(plot_groups(config, ts).items()):
                     if f"그룹: {group}" in report.omitted:
                         continue
                     if cancellation.is_set():
                         raise CancelledError("작업이 취소되었습니다.")
                     path = folder / f"plot-{index}.png"
-                    render_group_plot(ts, config, group, path)
+                    render_group_plot(ts, config, group, path, display_units=display_units)
                     title, _ = group_presentation(group, members)
                     images.append((f"{title} · {group}" if title != group else group, str(path)))
                 result = (report, images)

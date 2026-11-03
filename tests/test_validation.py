@@ -47,7 +47,8 @@ def test_shared_pipeline_export_and_reference_comparison(tmp_path):
     assert audit["status"] == "passed"
     assert {key: value["matches"] for key, value in audit["production_checks"].items()} == {"PI": 5, "PI100": 1, "PI_DETAIL": 5, "CAP": 1, "DCR": 1}
     assert all(not check["missing"] and not check["extra"] for check in audit["production_checks"].values())
-    assert sum(sheet["images"] for sheet in audit["layout"]) == 2
+    assert sum(sheet["images"] for sheet in audit["layout"]) == 3
+    assert next(sheet["images"] for sheet in audit["layout"] if sheet["sheet"] == "CAP_배치도면") == 2
     assert all(sheet["fonts"] and sheet["fills"] for sheet in audit["layout"])
     assert any(sheet["bold_cells"] for sheet in audit["layout"])
     values, _ = inspect_workbook(reference)
