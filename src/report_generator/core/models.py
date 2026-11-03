@@ -151,6 +151,7 @@ class ReportConfig:
     component_overrides: dict[str, float] = field(default_factory=dict)
     dcr: list[DcrRow] = field(default_factory=list)
     dcr_source_path: str = ""
+    channel_settings_source_path: str = ""
 
 
 @dataclass

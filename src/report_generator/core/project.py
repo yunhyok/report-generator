@@ -15,6 +15,8 @@ def validate_config(config: ReportConfig) -> None:
         raise ValueError("채널 순위 사용 여부를 확인하세요.")
     if not isinstance(config.dcr_source_path, str):
         raise ValueError("DCR 원본 파일 경로가 올바르지 않습니다.")
+    if not isinstance(config.channel_settings_source_path, str):
+        raise ValueError("채널 설정 Excel 경로가 올바르지 않습니다.")
     if config.settings.board_type not in ("MLO", "PCB"):
         raise ValueError("보드 종류는 MLO 또는 PCB여야 합니다.")
     if not all(isinstance(v, str) for v in config.settings.ground_nets):
@@ -38,7 +40,8 @@ def validate_config(config: ReportConfig) -> None:
 def save_project(path: str | Path, config: ReportConfig, sources: dict[str, str], signatures: dict | None = None) -> None:
     validate_config(config)
     destination = Path(path).resolve()
-    if any(destination == Path(p).resolve() for p in sources.values() if p):
+    inputs = (*sources.values(), config.dcr_source_path, config.channel_settings_source_path)
+    if any(destination == Path(p).resolve() for p in inputs if p):
         raise ValueError("입력 파일에 프로젝트를 덮어쓸 수 없습니다.")
     payload = {"version": 1, "sources": sources, "signatures": signatures or {}, "config": asdict(config)}
     temporary = None
@@ -68,6 +71,7 @@ def load_project(path: str | Path) -> tuple[ReportConfig, dict[str, str], dict, 
             component_overrides=raw.get("component_overrides", {}),
             dcr=[DcrRow(**v) for v in raw.get("dcr", [])],
             dcr_source_path=raw.get("dcr_source_path", ""),
+            channel_settings_source_path=raw.get("channel_settings_source_path", ""),
         )
         for row in config.mappings:
             if not all(isinstance(getattr(row, key), str) for key in ("source_name", "spd_port", "net", "site", "channel", "group", "priority", "status")):
@@ -79,6 +83,8 @@ def load_project(path: str | Path) -> tuple[ReportConfig, dict[str, str], dict, 
         if "use_priority" not in raw["settings"]:
             config.settings.use_priority = any(row.selected and row.priority.strip() for row in config.mappings)
         validate_config(config)
+        if config.channel_settings_source_path:
+            config.channel_settings_source_path = str((path.parent / config.channel_settings_source_path).resolve())
         sources = data.get("sources", {})
         if not isinstance(sources, dict) or any(k not in ("spd", "touchstone") or not isinstance(v, str) for k, v in sources.items()):
             raise ValueError("입력 파일 참조가 올바르지 않습니다.")

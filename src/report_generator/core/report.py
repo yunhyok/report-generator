@@ -486,6 +486,8 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
         raise ValueError("출력 파일 확장자는 .xlsx여야 합니다.")
     if config.dcr_source_path and Path(config.dcr_source_path).resolve() == target:
         raise ValueError("DCR 입력 파일에 보고서를 덮어쓸 수 없습니다.")
+    if config.channel_settings_source_path and Path(config.channel_settings_source_path).resolve() == target:
+        raise ValueError("채널 설정 Excel 파일에 보고서를 덮어쓸 수 없습니다.")
     for source in (spd, ts):
         if source is not None and Path(source.path).resolve() == target:
             raise ValueError("입력 파일에 보고서를 덮어쓸 수 없습니다.")

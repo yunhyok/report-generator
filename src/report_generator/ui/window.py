@@ -13,11 +13,12 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
     QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
-    QScrollArea, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
+    QScrollArea, QSizePolicy, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
     QTextBrowser, QVBoxLayout, QWidget,
 )
 
 from .. import __version__
+from ..core.channel_settings import read_channel_settings, write_channel_template
 from ..core.dcr import assign_column, parse_column, read_range
 from ..core.mapping import priority_value
 from ..core.models import ChannelMapping, DcrRow, ReportConfig, ReportSettings
@@ -305,15 +306,22 @@ class MainWindow(QMainWindow):
     def mapping_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        note = QLabel("사용 포트 확인 → 그룹 지정 → (선택) 채널 우선순위 → 미리보기. 같은 그룹은 한 그래프에 표시하며, 빈 그룹은 상세 그래프를 제외합니다.")
+        note = QLabel("같은 그룹은 한 그래프에 표시하며, 빈 그룹은 상세 그래프를 제외합니다. Excel 양식의 priority(순위·구분명)·group(그룹)을 입력해 불러오세요. 빈칸은 기존 값 유지, priority 입력 시 PI·CAP 순위 사용.")
         note.setWordWrap(True)
         layout.addWidget(note)
         row = QHBoxLayout()
         self.priority_button = button("채널 순위 설정…", self.edit_priorities)
+        self.channel_template_button = button("Excel 양식 저장…", self.export_channel_template)
+        self.channel_import_button = button("Excel 설정 불러오기…", self.import_channel_settings)
+        self.channel_template_button.setToolTip("검색과 관계없이 사용 체크된 채널·사이트를 저장합니다. priority·group은 비워 둡니다.")
+        self.channel_import_button.setToolTip("채널명·사이트로 찾아 적용합니다. 빈칸은 유지하며 priority 입력 시 PI·CAP 우선순위를 켭니다.")
         self.priority_status = QLabel()
-        self.priority_status.setWordWrap(True)
+        self.priority_status.setWordWrap(False)
+        self.priority_status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.priority_status.setProperty("muted", True)
         row.addWidget(self.priority_button)
+        row.addWidget(self.channel_template_button)
+        row.addWidget(self.channel_import_button)
         row.addWidget(self.priority_status, 1)
         layout.addLayout(row)
         self.update_priority_status()
@@ -452,15 +460,18 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.error(exc)
 
-    def collect_config(self, *, dcr=None):
-        config = self.config if dcr is None else replace(self.config, dcr=dcr)
-        config.settings = ReportSettings(self.title_input.text().strip(), self.product_input.text().strip(), self.board_type.currentText(), self.date_input.text().strip(), self.revision_input.text().strip(), self.mirror.isChecked(), [n.strip() for n in self.ground_input.text().split(",") if n.strip()], use_priority=self.config.settings.use_priority)
+    def collect_mappings(self):
         rows = []
         for row in range(self.mapping_table.rowCount()):
             text = lambda col: self.mapping_table.item(row, col).text().strip()
             checked = lambda col: self.mapping_table.item(row, col).checkState() == Qt.CheckState.Checked
             rows.append(ChannelMapping(int(text(3)) if text(3) else None, text(4), text(5), text(6), text(7), text(8), checked(0), checked(1), text(9), text(10), text(11), checked(2)))
-        config.mappings = rows
+        return rows
+
+    def collect_config(self, *, dcr=None):
+        config = self.config if dcr is None else replace(self.config, dcr=dcr)
+        config.settings = ReportSettings(self.title_input.text().strip(), self.product_input.text().strip(), self.board_type.currentText(), self.date_input.text().strip(), self.revision_input.text().strip(), self.mirror.isChecked(), [n.strip() for n in self.ground_input.text().split(",") if n.strip()], use_priority=self.config.settings.use_priority)
+        config.mappings = self.collect_mappings()
         if dcr is None:
             config.dcr = []
             for row in range(self.dcr_table.rowCount()):
@@ -488,7 +499,61 @@ class MainWindow(QMainWindow):
         self.update_priority_status()
 
     def update_priority_status(self):
-        self.priority_status.setText("PI·CAP 우선순위 사용 중 · 그래프 그룹과 별도" if self.config.settings.use_priority else "PI·CAP 우선순위 사용 안 함 · 입력값은 초안으로 보관")
+        state = "PI·CAP 순위 사용 중" if self.config.settings.use_priority else "PI·CAP 순위 사용 안 함"
+        source = self.config.channel_settings_source_path
+        detail = ("Excel: " + self.priority_status.fontMetrics().elidedText(Path(source).name, Qt.TextElideMode.ElideMiddle, 160)
+                  if source else "그래프 그룹과 별도" if self.config.settings.use_priority else "입력값은 초안으로 보관")
+        self.priority_status.setText(state + "\n" + detail)
+        self.priority_status.setToolTip(source or "PI·CAP 우선순위와 그래프 그룹은 별도입니다. 적용을 꺼도 입력값은 보관합니다.")
+
+    def export_channel_template(self):
+        path, _ = QFileDialog.getSaveFileName(self, "채널 설정 Excel 양식 저장", "channel_settings.xlsx", "Excel (*.xlsx)")
+        if not path:
+            return
+        try:
+            path = Path(path if path.lower().endswith(".xlsx") else path + ".xlsx").resolve()
+            protected = [self.spd_path.text().strip(), self.ts_path.text().strip(), self.project_path,
+                         self.config.dcr_source_path, self.config.channel_settings_source_path,
+                         *self.loaded_paths.values(), *(source.path for source in (self.spd, self.ts) if source)]
+            if any(path == Path(source).resolve() for source in protected if source):
+                raise ValueError("입력 파일·프로젝트·불러온 설정 파일에는 양식을 덮어쓸 수 없습니다. 다른 이름으로 저장하세요.")
+            write_channel_template(path, self.collect_mappings())
+            self.status.setText(f"Excel 양식 저장 완료: {path.name}. priority·group 입력 후 Excel 설정 불러오기를 누르세요.")
+        except Exception as exc:
+            self.error(exc)
+
+    def import_channel_settings(self):
+        path, _ = QFileDialog.getOpenFileName(self, "채널 설정 Excel 선택", "", "Excel (*.xlsx)")
+        if not path:
+            return
+        try:
+            mappings = self.collect_mappings()
+            priorities, groups = read_channel_settings(path, mappings)
+            source = str(Path(path).resolve())
+            updates = []
+            for row, mapping in enumerate(mappings):
+                channel, site = mapping.channel.strip().casefold(), mapping.site.strip().casefold()
+                if channel in priorities:
+                    updates.append((row, 10, priorities[channel]))
+                if mapping.selected and (channel, site) in groups:
+                    updates.append((row, 9, groups[channel, site]))
+            changed = bool(priorities) and not self.config.settings.use_priority
+            with QSignalBlocker(self.mapping_table):
+                for row, column, value in updates:
+                    item = self.mapping_table.item(row, column)
+                    changed |= item.text() != value
+                    item.setText(value)
+            if priorities:
+                self.config.settings.use_priority = True
+            self.config.channel_settings_source_path = source
+            self.update_priority_status()
+            if changed:
+                self.clear_preview()
+            mode = "PI·CAP 순위 사용 중" if self.config.settings.use_priority else "PI·CAP 순위 사용 안 함 유지"
+            self.status.setText(f"Excel 설정 적용: 순위 {len(priorities)}채널 · 그룹 {len(groups)}항목. {mode}. "
+                                + ("미리보기를 갱신하세요." if changed else "기존 값과 같습니다."))
+        except Exception as exc:
+            self.error(exc)
 
     def edit_priorities(self):
         channels = {}
@@ -777,6 +842,7 @@ class MainWindow(QMainWindow):
                 self.pending_config = None
             elif before != after:
                 self.config.mappings = mappings
+                self.config.channel_settings_source_path = ""
                 self.config.model_overrides.clear()
                 self.config.component_overrides.clear()
                 if any(before) and self.config.dcr:

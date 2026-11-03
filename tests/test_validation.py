@@ -111,6 +111,12 @@ def test_never_overwrites_source_reference_project_or_dcr_input(tmp_path):
     with pytest.raises(ValueError, match="덮어쓸"):
         validate_project(path, source)
     raw["config"]["dcr_source_path"] = ""
+    raw["config"]["channel_settings_source_path"] = source.name
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    with pytest.raises(ValueError, match="덮어쓸"):
+        validate_project(path, source)
+    assert source.read_bytes() == b"input must survive"
+    raw["config"]["channel_settings_source_path"] = ""
     path.write_text(json.dumps(raw), encoding="utf-8")
     with pytest.raises(ValueError, match="덮어쓸"):
         validate_project(path, source, source)

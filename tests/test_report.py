@@ -203,13 +203,14 @@ def test_unfrozen_placement_has_no_frozen_pane_selections(tmp_path):
     assert selections[0].get("activeCell") == "B4"
 
 
-def test_output_cannot_replace_dcr_input(tmp_path):
-    source = tmp_path / "dcr-source.xlsx"
-    source.write_bytes(b"original DCR input")
-    config = ReportConfig(dcr=[DcrRow("SITE0", "VDD", 1.5)], dcr_source_path=str(source))
-    with pytest.raises(ValueError, match="DCR 입력 파일"):
+@pytest.mark.parametrize("source_field", ["dcr_source_path", "channel_settings_source_path"])
+def test_output_cannot_replace_imported_workbook(tmp_path, source_field):
+    source = tmp_path / "input.xlsx"
+    source.write_bytes(b"original input")
+    config = ReportConfig(dcr=[DcrRow("SITE0", "VDD", 1.5)], **{source_field: str(source)})
+    with pytest.raises(ValueError, match="덮어쓸"):
         build_report(config, None, None, source)
-    assert source.read_bytes() == b"original DCR input"
+    assert source.read_bytes() == b"original input"
 
 
 def test_interpolated_values_are_numeric_and_marked_in_every_pi_table(tmp_path):

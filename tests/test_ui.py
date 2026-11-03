@@ -502,6 +502,10 @@ def test_priority_entry_and_dialog_fit_small_window(window, app):
     assert window.height() == 460
     assert window.priority_button.isVisible()
     assert window.priority_button.text() == "채널 순위 설정…"
+    assert window.channel_template_button.isVisible()
+    assert window.channel_import_button.isVisible()
+    assert window.channel_template_button.text() == "Excel 양식 저장…"
+    assert window.channel_import_button.text() == "Excel 설정 불러오기…"
     assert window.mapping_table.height() >= 70
     assert window.priority_button.geometry().bottom() < window.mapping_table.geometry().top()
     dialog = PriorityDialog({f"RAIL_{index}": [""] for index in range(100)}, False, window)
@@ -518,3 +522,171 @@ def test_priority_entry_and_dialog_fit_small_window(window, app):
     assert dialog.table.item(0, 2).text() == "미입력"
     assert dialog.table.item(0, 1).background() != dialog.table.item(0, 0).background()
     dialog.reject()
+
+
+def channel_workbook(tmp_path, rows):
+    from openpyxl import Workbook
+    path = tmp_path / "channel-settings.xlsx"
+    book = Workbook()
+    for row in rows:
+        book.active.append(row)
+    book.save(path)
+    book.close()
+    return path
+
+
+def test_channel_template_exports_live_selected_rows_despite_filter_and_partial_dcr(window, monkeypatch, tmp_path):
+    from openpyxl import load_workbook
+    window.config.mappings = [ChannelMapping(channel="OLD", site="S0", group="G", priority="2"),
+                              ChannelMapping(channel="B", site="S1"),
+                              ChannelMapping(channel="OFF", site="S0", selected=False),
+                              ChannelMapping(channel="INCOMPLETE")]
+    window.fill_mappings()
+    window.mapping_table.item(0, 8).setText("LIVE")
+    window.map_filter.setText("LIVE")
+    window.add_dcr()
+    path = tmp_path / "template.xlsx"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **kw: (str(path.with_suffix("")), ""))
+    window.export_channel_template()
+    book = load_workbook(path)
+    assert list(book.active.values) == [("채널명", "사이트", "priority", "group"),
+                                        ("LIVE", "S0", None, None), ("B", "S1", None, None)]
+    book.close()
+    assert not window.config.settings.use_priority
+    assert window.config.channel_settings_source_path == ""
+    assert window.mapping_table.item(0, 9).text() == "G"
+
+
+def test_channel_import_matches_live_identities_and_propagates_without_confirmation_changes(window, monkeypatch, tmp_path):
+    window.config.mappings = [ChannelMapping(channel="OLD", site="S1", priority="8", status="기존 상태"),
+                              ChannelMapping(channel="RAIL_A", site="s1", priority="7"),
+                              ChannelMapping(channel="rail_a", site="S2", priority="9", selected=False, group="OFF"),
+                              ChannelMapping(channel="RAIL_B", site="S0", priority="4", group="OLD")]
+    window.fill_mappings()
+    window.mapping_table.item(0, 8).setText("RAIL_A")
+    window.map_filter.setText("nothing-visible")
+    confirmations = [window.mapping_table.item(row, 2).checkState() for row in range(4)]
+    statuses = [window.mapping_table.item(row, 11).text() for row in range(4)]
+    window.add_dcr()
+    old_dcr = [[window.dcr_table.item(0, col).text() for col in range(3)]]
+    seed_preview(window)
+    path = channel_workbook(tmp_path, [("group", "사이트", "채널명", "priority"),
+                                       ("B-new", "S0", "RAIL_B", None),
+                                       ("A-new", " s1 ", " rail_a ", 2)])
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: (str(path), ""))
+    window.import_channel_settings()
+    assert [window.mapping_table.item(row, 10).text() for row in range(4)] == ["2", "2", "2", "4"]
+    assert [window.mapping_table.item(row, 9).text() for row in range(4)] == ["A-new", "A-new", "OFF", "B-new"]
+    assert [window.mapping_table.item(row, 2).checkState() for row in range(4)] == confirmations
+    assert [window.mapping_table.item(row, 11).text() for row in range(4)] == statuses
+    assert [[window.dcr_table.item(0, col).text() for col in range(3)]] == old_dcr
+    assert window.config.settings.use_priority
+    assert window.config.channel_settings_source_path == str(path.resolve())
+    assert "Excel:" in window.priority_status.text()
+    assert window.priority_status.toolTip() == str(path.resolve())
+    assert_preview_empty(window)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_channel_group_only_import_preserves_priority_state_and_unchanged_preview(window, monkeypatch, tmp_path, enabled):
+    window.config.settings.use_priority = enabled
+    window.config.mappings = [ChannelMapping(channel="A", site="S0", priority="3", group="same")]
+    window.fill_mappings()
+    seed_preview(window)
+    path = channel_workbook(tmp_path, [("채널명", "사이트", "group"), ("A", "S0", "same")])
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: (str(path), ""))
+    window.import_channel_settings()
+    assert window.config.settings.use_priority == enabled
+    assert window.mapping_table.item(0, 10).text() == "3"
+    assert window.preview_book == "old-preview.xlsx"
+    assert "기존 값과 같습니다" in window.status.text()
+    assert window.config.channel_settings_source_path == str(path.resolve())
+
+
+@pytest.mark.parametrize("bad_row", [("A", "S0", "0", "bad"),
+                                     ("UNKNOWN", "S0", "2", "bad"),
+                                     ("A", "S0", "1", "bad")])
+def test_channel_import_errors_do_not_partially_apply(window, monkeypatch, tmp_path, bad_row):
+    window.config.mappings = [ChannelMapping(channel="A", site="S0", priority="9", group="old")]
+    window.config.channel_settings_source_path = "previous.xlsx"
+    window.fill_mappings()
+    seed_preview(window)
+    path = channel_workbook(tmp_path, [("채널명", "사이트", "priority", "group"),
+                                       ("A", "S0", "2", "new"), bad_row])
+    errors = []
+    monkeypatch.setattr(window, "error", lambda exc: errors.append(str(exc)))
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: (str(path), ""))
+    window.import_channel_settings()
+    assert errors
+    assert window.mapping_table.item(0, 9).text() == "old"
+    assert window.mapping_table.item(0, 10).text() == "9"
+    assert not window.config.settings.use_priority
+    assert window.config.channel_settings_source_path == "previous.xlsx"
+    assert window.preview_book == "old-preview.xlsx"
+
+
+@pytest.mark.parametrize("source", ["settings", "dcr", "spd", "touchstone", "project", "loaded", "parsed"])
+def test_channel_template_cannot_overwrite_inputs(window, monkeypatch, tmp_path, source):
+    path = tmp_path / "protected.xlsx"
+    path.write_bytes(b"original")
+    window.config.mappings = [ChannelMapping(channel="A", site="S0")]
+    window.fill_mappings()
+    if source == "settings":
+        window.config.channel_settings_source_path = str(path)
+    elif source == "dcr":
+        window.config.dcr_source_path = str(path)
+    elif source == "project":
+        window.project_path = str(path)
+    elif source == "loaded":
+        window.loaded_paths["spd"] = str(path)
+    elif source == "parsed":
+        window.spd = SpdData(str(path), {})
+    else:
+        (window.spd_path if source == "spd" else window.ts_path).setText(str(path))
+    errors = []
+    monkeypatch.setattr(window, "error", lambda exc: errors.append(str(exc)))
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **kw: (str(path), ""))
+    window.export_channel_template()
+    assert errors and "덮어쓸 수 없습니다" in errors[0]
+    assert path.read_bytes() == b"original"
+
+
+def test_channel_excel_cancel_preserves_settings_and_preview(window, monkeypatch):
+    window.config.mappings = [ChannelMapping(channel="A", site="S0", priority="9", group="old")]
+    window.config.channel_settings_source_path = "previous.xlsx"
+    window.fill_mappings()
+    seed_preview(window)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: ("", ""))
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **kw: ("", ""))
+    window.import_channel_settings()
+    window.export_channel_template()
+    assert window.mapping_table.item(0, 9).text() == "old"
+    assert window.mapping_table.item(0, 10).text() == "9"
+    assert not window.config.settings.use_priority
+    assert window.config.channel_settings_source_path == "previous.xlsx"
+    assert window.preview_book == "old-preview.xlsx"
+
+
+def test_priority_only_channel_import_enables_application_and_preserves_group(window, monkeypatch, tmp_path):
+    window.config.mappings = [ChannelMapping(channel="A", site="S0", priority="2", group="existing")]
+    window.fill_mappings()
+    seed_preview(window)
+    path = channel_workbook(tmp_path, [("채널명", "사이트", "priority"), ("A", "S0", "2")])
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: (str(path), ""))
+    window.import_channel_settings()
+    assert window.config.settings.use_priority
+    assert window.mapping_table.item(0, 9).text() == "existing"
+    assert_preview_empty(window)
+
+
+@pytest.mark.parametrize("preserve", ["same", "pending", "changed"])
+def test_channel_settings_badge_follows_mapping_source_reload(window, preserve):
+    window.config.channel_settings_source_path = "settings.xlsx"
+    window.spd = SpdData("old.spd", {"size": 1})
+    if preserve == "pending":
+        window.pending_config = window.config
+    window.action = "load"
+    source = window.spd if preserve == "same" else SpdData("new.spd", {"size": 2})
+    window.on_finished((source, None, [], []))
+    assert window.config.channel_settings_source_path == ("" if preserve == "changed" else "settings.xlsx")
+    assert ("Excel:" in window.priority_status.text()) == (preserve != "changed")

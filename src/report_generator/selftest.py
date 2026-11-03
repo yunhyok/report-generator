@@ -12,6 +12,7 @@ def run(destination: str) -> int:
     from PySide6.QtGui import QFont, QFontDatabase
     import os
     from openpyxl import load_workbook
+    from .core.channel_settings import read_channel_settings, write_channel_template
     from .core.models import DcrRow, ReportConfig
     from .jobs import JobRunner
     from .ui.window import MainWindow
@@ -60,7 +61,19 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
             if state["stage"] == "load":
                 spd, ts, mappings, errors = result
                 assert not errors and len(mappings) == 1 and mappings[0].confirmed
+                template = folder / "synthetic-channel-settings.xlsx"
+                write_channel_template(template, mappings)
+                edited = load_workbook(template)
+                edited.active["C2"] = 1
+                edited.active["D2"] = "Load rails"
+                edited.save(template)
+                edited.close()
+                mapping = mappings[0]
+                channel, site = mapping.channel.casefold(), mapping.site.casefold()
+                priorities, groups = read_channel_settings(template, mappings)
+                mapping.priority, mapping.group = priorities[channel], groups[channel, site]
                 config = ReportConfig(mappings=mappings, dcr=[DcrRow("SITE0", "POWER", 2)])
+                config.settings.use_priority = True
                 window.spd, window.ts, window.config = spd, ts, config
                 window.fill_mappings()
                 window.fill_caps()
@@ -75,6 +88,9 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 assert len(report.sheets) == 6 and len(images) == 2
                 book = load_workbook(report.path, data_only=True)
                 pi = book["PI ALL@100MHz"]
+                assert "Load rails" in book.sheetnames
+                priority_column = next(cell.column for cell in pi[4] if cell.value == "Priority")
+                assert pi.cell(5, priority_column).value == 1
                 maximum_column = next(cell.column for cell in pi[4] if cell.value == "MAX.")
                 assert pi.cell(5, maximum_column).value == 1000
                 dcr = book["DCR"]

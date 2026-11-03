@@ -271,6 +271,8 @@ def validate_project(project_path, output_path, reference_path=None, *, progress
     protected.update(Path(source).resolve() for source in sources.values() if source)
     if config.dcr_source_path:
         protected.add((project.parent / config.dcr_source_path).resolve())
+    if config.channel_settings_source_path:
+        protected.add(Path(config.channel_settings_source_path).resolve())
     if any(path in protected for path in (output, json_path, html_path)):
         raise ValueError("입력·참조·프로젝트 파일에 검증 결과를 덮어쓸 수 없습니다.")
     output.parent.mkdir(parents=True, exist_ok=True)
