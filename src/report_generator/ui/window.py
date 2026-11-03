@@ -7,7 +7,7 @@ import tempfile
 from dataclasses import asdict, replace
 from pathlib import Path
 
-from PySide6.QtCore import QModelIndex, QSignalBlocker, Qt
+from PySide6.QtCore import QEvent, QModelIndex, QSignalBlocker, Qt
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
@@ -306,7 +306,7 @@ class MainWindow(QMainWindow):
     def mapping_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        note = QLabel("같은 그룹은 한 그래프에 표시하며, 빈 그룹은 상세 그래프를 제외합니다. Excel 양식의 priority(순위·구분명)·group(그룹)을 입력해 불러오세요. 빈칸은 기존 값 유지, priority 입력 시 PI·CAP 순위 사용.")
+        note = QLabel("같은 그룹은 한 그래프, 빈 그룹은 상세 그래프 제외. Excel(.xlsx) 1개를 이 화면에 끌어 놓거나 불러오세요. priority는 순위·구분명, group은 그룹입니다. 빈칸 유지, priority 입력 시 PI·CAP 순위 사용.")
         note.setWordWrap(True)
         layout.addWidget(note)
         row = QHBoxLayout()
@@ -314,7 +314,7 @@ class MainWindow(QMainWindow):
         self.channel_template_button = button("Excel 양식 저장…", self.export_channel_template)
         self.channel_import_button = button("Excel 설정 불러오기…", self.import_channel_settings)
         self.channel_template_button.setToolTip("검색과 관계없이 사용 체크된 채널·사이트를 저장합니다. priority·group은 비워 둡니다.")
-        self.channel_import_button.setToolTip("채널명·사이트로 찾아 적용합니다. 빈칸은 유지하며 priority 입력 시 PI·CAP 우선순위를 켭니다.")
+        self.channel_import_button.setToolTip("채널명·사이트로 찾아 적용합니다. 빈칸은 유지하며 priority 입력 시 PI·CAP 우선순위를 켭니다.\nExcel(.xlsx) 1개를 채널·그룹 화면에 끌어 놓아도 됩니다.")
         self.priority_status = QLabel()
         self.priority_status.setWordWrap(False)
         self.priority_status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
@@ -350,7 +350,38 @@ class MainWindow(QMainWindow):
             self.mapping_table.setColumnWidth(index, 180)
         self.mapping_table.itemChanged.connect(self.mapping_edited)
         layout.addWidget(self.mapping_table, 1)
+        self.channel_settings_page = page
+        page.setAcceptDrops(True)
+        for target in (page, self.mapping_table.viewport(), self.map_filter, self.group_input):
+            target.installEventFilter(self)
         return page
+
+    def eventFilter(self, watched, event):
+        if (event.type() == QEvent.Type.ChildPolished and watched is self.mapping_table.viewport()
+                and isinstance(event.child(), QLineEdit)):
+            event.child().installEventFilter(self)
+        if (event.type() in (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.Drop)
+                and isinstance(watched, QWidget)
+                and (watched is self.channel_settings_page or self.channel_settings_page.isAncestorOf(watched))
+                and event.mimeData().hasUrls()):
+            event.ignore()
+            if (self.runner.busy or not self.channel_settings_page.isEnabled()
+                    or self.tabs.currentWidget() is not self.channel_settings_page):
+                return True
+            urls = event.mimeData().urls()
+            if len(urls) != 1 or not urls[0].isLocalFile() or urls[0].host():
+                return True
+            path = Path(urls[0].toLocalFile())
+            if (path.suffix.casefold() != ".xlsx" or not path.is_absolute() or not path.is_file()
+                    or not event.possibleActions() & Qt.DropAction.CopyAction):
+                return True
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+            if event.type() == QEvent.Type.Drop:
+                self.channel_import_button.setFocus(Qt.FocusReason.OtherFocusReason)
+                self.apply_channel_settings(path)
+            return True
+        return super().eventFilter(watched, event)
 
     def cap_dcr_page(self):
         page = QWidget()
@@ -523,8 +554,14 @@ class MainWindow(QMainWindow):
             self.error(exc)
 
     def import_channel_settings(self):
+        if self.runner.busy or not self.tabs.isEnabled():
+            return
         path, _ = QFileDialog.getOpenFileName(self, "채널 설정 Excel 선택", "", "Excel (*.xlsx)")
-        if not path:
+        if path:
+            self.apply_channel_settings(path)
+
+    def apply_channel_settings(self, path):
+        if self.runner.busy or not self.tabs.isEnabled():
             return
         try:
             mappings = self.collect_mappings()

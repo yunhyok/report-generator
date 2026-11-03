@@ -7,12 +7,12 @@ from pathlib import Path
 
 
 def run(destination: str) -> int:
-    from PySide6.QtCore import QTimer
+    from PySide6.QtCore import QMimeData, QPoint, Qt, QTimer, QUrl
     from PySide6.QtWidgets import QApplication
-    from PySide6.QtGui import QFont, QFontDatabase
+    from PySide6.QtGui import QDragEnterEvent, QDropEvent, QFont, QFontDatabase
     import os
     from openpyxl import load_workbook
-    from .core.channel_settings import read_channel_settings, write_channel_template
+    from .core.channel_settings import write_channel_template
     from .core.models import DcrRow, ReportConfig
     from .jobs import JobRunner
     from .ui.window import MainWindow
@@ -68,18 +68,23 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 edited.active["D2"] = "Load rails"
                 edited.save(template)
                 edited.close()
-                mapping = mappings[0]
-                channel, site = mapping.channel.casefold(), mapping.site.casefold()
-                priorities, groups = read_channel_settings(template, mappings)
-                mapping.priority, mapping.group = priorities[channel], groups[channel, site]
                 config = ReportConfig(mappings=mappings, dcr=[DcrRow("SITE0", "POWER", 2)])
-                config.settings.use_priority = True
                 window.spd, window.ts, window.config = spd, ts, config
                 window.fill_mappings()
                 window.fill_caps()
                 window.fill_dcr()
                 window.tabs.setCurrentIndex(1)
                 app.processEvents()
+                mime = QMimeData()
+                mime.setUrls([QUrl.fromLocalFile(str(template))])
+                target = window.mapping_table.viewport()
+                for event_type in (QDragEnterEvent, QDropEvent):
+                    event = event_type(QPoint(4, 4), Qt.DropAction.CopyAction, mime,
+                                       Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+                    QApplication.sendEvent(target, event)
+                    assert event.isAccepted()
+                config = window.collect_config()
+                assert config.settings.use_priority and config.mappings[0].group == "Load rails"
                 window.grab().save(str(folder / "ui.png"))
                 state["stage"] = "preview"
                 runner.start("preview", {"config": config, "spd": spd, "ts": ts, "folder": str(folder)})

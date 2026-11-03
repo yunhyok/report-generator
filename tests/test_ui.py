@@ -690,3 +690,172 @@ def test_channel_settings_badge_follows_mapping_source_reload(window, preserve):
     window.on_finished((source, None, [], []))
     assert window.config.channel_settings_source_path == ("" if preserve == "changed" else "settings.xlsx")
     assert ("Excel:" in window.priority_status.text()) == (preserve != "changed")
+
+
+def send_channel_drag(target, mime, actions=Qt.DropAction.CopyAction | Qt.DropAction.MoveAction):
+    from PySide6.QtCore import QPoint, QPointF
+    from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
+    enter = QDragEnterEvent(QPoint(5, 5), actions, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    move = QDragMoveEvent(QPoint(5, 5), actions, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    drop = QDropEvent(QPointF(5, 5), actions, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    for event in (enter, move, drop):
+        QApplication.sendEvent(target, event)
+    return enter, move, drop
+
+
+@pytest.mark.parametrize("target", ["page", "table", "button", "search", "group", "editor"])
+def test_channel_excel_drag_drop_uses_copy_and_shared_import(window, app, monkeypatch, tmp_path, target):
+    from PySide6.QtCore import QMimeData, QUrl
+    from PySide6.QtWidgets import QLineEdit
+    window.config.mappings = [ChannelMapping(channel="A", site="S0", priority="9", group="old")]
+    window.fill_mappings()
+    window.group_input.setText("manual draft")
+    window.tabs.setCurrentIndex(1)
+    window.show()
+    app.processEvents()
+    targets = {"page": window.channel_settings_page, "table": window.mapping_table.viewport(),
+               "button": window.channel_import_button, "search": window.map_filter, "group": window.group_input}
+    if target == "editor":
+        window.mapping_table.editItem(window.mapping_table.item(0, 9))
+        app.processEvents()
+        targets[target] = next(editor for editor in window.mapping_table.findChildren(QLineEdit) if editor.isVisible())
+    path = channel_workbook(tmp_path, [("채널명", "사이트", "priority", "group"), ("A", "S0", 2, "new")])
+    original = path.read_bytes()
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: pytest.fail("Drop must not open a file picker"))
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(path))])
+    events = send_channel_drag(targets[target], mime)
+    assert all(event.isAccepted() and event.dropAction() == Qt.DropAction.CopyAction for event in events)
+    assert window.config.settings.use_priority
+    assert window.mapping_table.item(0, 10).text() == "2"
+    assert window.mapping_table.item(0, 9).text() == "new"
+    assert window.config.channel_settings_source_path == str(path.resolve())
+    assert window.map_filter.text() == ""
+    assert window.group_input.text() == "manual draft"
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("payload", ["multi", "remote", "network", "extension", "missing", "directory", "move_only"])
+def test_channel_excel_drop_rejects_unsupported_payload_without_path_insertion(window, app, tmp_path, payload):
+    from PySide6.QtCore import QMimeData, QUrl
+    window.config.mappings = [ChannelMapping(channel="A", site="S0", priority="9")]
+    window.fill_mappings()
+    window.tabs.setCurrentIndex(1)
+    window.show()
+    app.processEvents()
+    path = channel_workbook(tmp_path, [("채널명", "사이트", "priority"), ("A", "S0", 2)])
+    urls = [QUrl.fromLocalFile(str(path))]
+    if payload == "multi":
+        urls *= 2
+    elif payload == "remote":
+        urls = [QUrl("https://example.com/settings.xlsx")]
+    elif payload == "network":
+        urls = [QUrl("file://server/share/settings.xlsx")]
+    elif payload == "extension":
+        path = tmp_path / "settings.txt"
+        path.write_text("unsupported")
+        urls = [QUrl.fromLocalFile(str(path))]
+    elif payload == "missing":
+        urls = [QUrl.fromLocalFile(str(tmp_path / "missing.xlsx"))]
+    elif payload == "directory":
+        path = tmp_path / "folder.xlsx"
+        path.mkdir()
+        urls = [QUrl.fromLocalFile(str(path))]
+    mime = QMimeData()
+    mime.setUrls(urls)
+    actions = Qt.DropAction.MoveAction if payload == "move_only" else Qt.DropAction.CopyAction
+    for target in (window.channel_settings_page, window.map_filter, window.group_input):
+        events = send_channel_drag(target, mime, actions)
+        assert not any(event.isAccepted() for event in events)
+    assert window.map_filter.text() == window.group_input.text() == ""
+    assert window.mapping_table.item(0, 10).text() == "9"
+    assert not window.config.settings.use_priority
+    assert window.config.channel_settings_source_path == ""
+
+
+@pytest.mark.parametrize("blocked", ["busy", "disabled", "other_tab"])
+def test_channel_excel_drop_respects_busy_disabled_and_active_tab(window, app, monkeypatch, tmp_path, blocked):
+    from PySide6.QtCore import QMimeData, QUrl
+    window.config.mappings = [ChannelMapping(channel="A", site="S0", priority="9")]
+    window.fill_mappings()
+    window.tabs.setCurrentIndex(1)
+    window.show()
+    app.processEvents()
+    path = channel_workbook(tmp_path, [("채널명", "사이트", "priority"), ("A", "S0", 2)])
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(path))])
+    with monkeypatch.context() as patch:
+        if blocked == "busy":
+            patch.setattr(type(window.runner), "busy", property(lambda _: True))
+        elif blocked == "disabled":
+            window.on_busy(True)
+        else:
+            window.tabs.setCurrentIndex(0)
+        events = send_channel_drag(window.mapping_table.viewport(), mime)
+        assert not any(event.isAccepted() for event in events)
+        if blocked != "other_tab":
+            patch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: pytest.fail("Busy picker must remain closed"))
+            window.import_channel_settings()
+            window.apply_channel_settings(path)
+    window.on_busy(False)
+    assert window.mapping_table.item(0, 10).text() == "9"
+    assert not window.config.settings.use_priority
+    assert window.config.channel_settings_source_path == ""
+
+
+def test_channel_drop_reports_same_invalid_workbook_error_as_button(window, app, monkeypatch, tmp_path):
+    from PySide6.QtCore import QMimeData, QUrl
+    window.config.mappings = [ChannelMapping(channel="A", site="S0", priority="9", group="old")]
+    window.fill_mappings()
+    seed_preview(window)
+    path = channel_workbook(tmp_path, [("채널명", "사이트", "priority"), ("A", "S0", 0)])
+    errors = []
+    monkeypatch.setattr(window, "error", lambda exc: errors.append(str(exc)))
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: (str(path), ""))
+    window.import_channel_settings()
+    window.tabs.setCurrentIndex(1)
+    window.show()
+    app.processEvents()
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(path))])
+    send_channel_drag(window.mapping_table.viewport(), mime)
+    assert len(errors) == 2 and errors[0] == errors[1]
+    assert window.mapping_table.item(0, 10).text() == "9"
+    assert window.mapping_table.item(0, 9).text() == "old"
+    assert window.preview_book == "old-preview.xlsx"
+    assert window.config.channel_settings_source_path == ""
+
+
+def test_channel_search_still_accepts_normal_text_drag(window, app):
+    from PySide6.QtCore import QMimeData
+    window.tabs.setCurrentIndex(1)
+    window.show()
+    app.processEvents()
+    mime = QMimeData()
+    mime.setText("RAIL")
+    events = send_channel_drag(window.map_filter, mime, Qt.DropAction.CopyAction)
+    assert events[0].isAccepted() and events[-1].isAccepted()
+    assert window.map_filter.text() == "RAIL"
+    assert not window.config.settings.use_priority
+
+
+def test_channel_drop_commits_active_identity_editor_before_matching(window, app, tmp_path):
+    from PySide6.QtCore import QMimeData, QUrl
+    from PySide6.QtWidgets import QLineEdit
+    window.config.mappings = [ChannelMapping(channel="OLD", site="S0", group="old")]
+    window.fill_mappings()
+    window.tabs.setCurrentIndex(1)
+    window.show()
+    app.processEvents()
+    window.mapping_table.editItem(window.mapping_table.item(0, 8))
+    app.processEvents()
+    editor = next(editor for editor in window.mapping_table.findChildren(QLineEdit) if editor.isVisible())
+    editor.setText("A")
+    assert window.mapping_table.item(0, 8).text() == "OLD"
+    path = channel_workbook(tmp_path, [("채널명", "사이트", "group"), ("A", "S0", "new")])
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(path))])
+    send_channel_drag(editor, mime)
+    assert window.mapping_table.item(0, 8).text() == "A"
+    assert window.mapping_table.item(0, 9).text() == "new"
+    assert window.config.channel_settings_source_path == str(path.resolve())
