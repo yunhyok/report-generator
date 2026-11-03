@@ -10,7 +10,8 @@ from report_generator.core.project import load_project, save_project
 def test_project_roundtrip_and_changed_source(tmp_path):
     source = tmp_path / "board.txt"
     source.write_text("synthetic")
-    config = ReportConfig(mappings=[ChannelMapping(site="SITE0", channel="VDD")], dcr=[DcrRow("SITE0", "VDD", 0)])
+    config = ReportConfig(mappings=[ChannelMapping(site="SITE0", channel="VDD", net="SPD_VDD_0",
+                                                  display_name="VDD_CORE")], dcr=[DcrRow("SITE0", "VDD", 0)])
     project = tmp_path / "test.report.json"
     save_project(project, config, {"spd": str(source)}, {"spd": source_signature(source)})
     restored, _, _, changed = load_project(project)
@@ -28,8 +29,10 @@ def test_existing_projects_keep_ranks_but_explicitly_disabled_ranks_stay_off(tmp
     legacy = json.loads(path.read_text(encoding="utf-8"))
     del legacy["config"]["settings"]["use_priority"]
     del legacy["config"]["channel_settings_source_path"]
+    del legacy["config"]["mappings"][0]["display_name"]
     path.write_text(json.dumps(legacy), encoding="utf-8")
     restored = load_project(path)[0]
+    assert restored.mappings[0].display_name == ""
     assert restored.settings.use_priority and restored.mappings[0].priority == "2"
     legacy["config"]["mappings"][0]["priority"] = ""
     path.write_text(json.dumps(legacy), encoding="utf-8")

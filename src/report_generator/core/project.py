@@ -74,7 +74,7 @@ def load_project(path: str | Path) -> tuple[ReportConfig, dict[str, str], dict, 
             channel_settings_source_path=raw.get("channel_settings_source_path", ""),
         )
         for row in config.mappings:
-            if not all(isinstance(getattr(row, key), str) for key in ("source_name", "spd_port", "net", "site", "channel", "group", "priority", "status")):
+            if not all(isinstance(getattr(row, key), str) for key in ("source_name", "spd_port", "net", "site", "channel", "group", "priority", "status", "display_name")):
                 raise ValueError("채널 매핑 형식이 올바르지 않습니다.")
             if not all(isinstance(getattr(row, key), bool) for key in ("selected", "summary", "confirmed")):
                 raise ValueError("채널 선택 상태가 올바르지 않습니다.")

@@ -43,11 +43,10 @@ def run_job(action, payload, messages, cancellation):
                 raise ValueError("\n".join(errors) or "입력 파일을 선택하세요.")
             result = (spd, ts, suggest_mappings(spd, ts), errors)
         else:
-            from .core.mapping import validate_mappings
+            from .core.mapping import group_presentation, validate_mappings
             from .core.project import validate_config
-            from .core.report import build_report
+            from .core.report import build_report, plot_groups
             from .core.render import render_placement, render_group_plot, placement_components
-            from .core.report import plan_pages
             config, spd, ts = payload["config"], payload.get("spd"), payload.get("ts")
             validate_config(config)
             if any(m.selected for m in config.mappings):
@@ -71,15 +70,15 @@ def run_job(action, payload, messages, cancellation):
                         path = folder / f"placement-{side}.png"
                         render_placement(spd, config, side, path)
                         images.append((f"CAP {side}", str(path)))
-                if ts:
-                    for index, group in enumerate(dict.fromkeys(m.group for m in config.mappings if m.selected and m.group and m.port_index is not None)):
-                        if f"그룹: {group}" in report.omitted:
-                            continue
-                        if cancellation.is_set():
-                            raise CancelledError("작업이 취소되었습니다.")
-                        path = folder / f"plot-{index}.png"
-                        render_group_plot(ts, config, group, path)
-                        images.append((group, str(path)))
+                for index, (group, members) in enumerate(plot_groups(config, ts).items()):
+                    if f"그룹: {group}" in report.omitted:
+                        continue
+                    if cancellation.is_set():
+                        raise CancelledError("작업이 취소되었습니다.")
+                    path = folder / f"plot-{index}.png"
+                    render_group_plot(ts, config, group, path)
+                    title, _ = group_presentation(group, members)
+                    images.append((f"{title} · {group}" if title != group else group, str(path)))
                 result = (report, images)
             else:
                 raise ValueError("알 수 없는 작업입니다.")

@@ -145,7 +145,10 @@ def inspect_workbook(path, site_names=()):
             normalized = sheet.title.replace("_", " ").upper()
             pi = _pi_tables(sheet)
             if pi:
-                values["PI" if normalized == "PI ALL" else "PI_DETAIL"].update(pi)
+                # A detail tab may also be named PI_ALL. Its plot replaces the table at B4.
+                summary = normalized == "PI ALL" and not (
+                    sheet._images and sheet["B4"].value is None and sheet["P4"].value is not None)
+                values["PI" if summary else "PI_DETAIL"].update(pi)
             elif sheet.title == "CAP_수량":
                 values["CAP"].update(_matrix_tables(sheet, cap=True, site_names=site_names))
             elif normalized == "DCR":

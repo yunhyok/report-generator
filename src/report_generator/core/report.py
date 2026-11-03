@@ -17,7 +17,7 @@ from openpyxl.worksheet.views import Selection
 from .models import ReportConfig, ReportResult, SpdData, TouchstoneData, checkpoint
 from .render import placement_components, render_group_plot, render_placement
 from .capacitance import summarize_caps
-from .mapping import priority_value
+from .mapping import group_presentation, priority_value
 from .touchstone import interpolate_impedance
 
 
@@ -103,16 +103,28 @@ def _spot_rows(config, ts, summary=False):
     return rows
 
 
+def plot_groups(config, ts):
+    groups = {}
+    if ts is not None:
+        for mapping in _mappings(config, ts):
+            if mapping.group:
+                groups.setdefault(mapping.group, []).append(mapping)
+    return groups
+
+
 def _safe_sheet_name(label, used):
     label = re.sub(r"[\\/*?:\[\]\x00-\x1f]", "_", str(label)).strip("'") or "Group"
-    base = label[:31]
-    candidate, number = base, 2
-    while candidate.casefold() in used:
-        suffix = f" ({number})"
-        candidate = base[:31 - len(suffix)] + suffix
+    # Excel counts UTF-16 units and rejects a trailing apostrophe even after truncation.
+    encoded = label.encode("utf-16-le")
+    number = 1
+    while True:
+        suffix = "" if number == 1 else f" ({number})"
+        prefix = encoded[:2 * (31 - len(suffix))].decode("utf-16-le", errors="ignore")
+        candidate = (prefix.rstrip("'") + suffix) or "Group"
+        if candidate.casefold() not in used:
+            used.add(candidate.casefold())
+            return candidate
         number += 1
-    used.add(candidate.casefold())
-    return candidate
 
 
 def _plan(config, spd, ts):
@@ -146,14 +158,14 @@ def _plan(config, spd, ts):
         add("placement", "CAP_배치도면", sides)
     else:
         omitted["CAP_배치도면"] = "표시할 부품 좌표가 없습니다."
-    groups = list(dict.fromkeys(m.group for m in _mappings(config, ts) if m.group)) if ts else []
-    for group in groups:
-        maps = [m for m in _mappings(config, ts) if m.group == group]
+    for group, maps in plot_groups(config, ts).items():
         valid = any(np.any(np.isfinite(np.abs(ts.z_diagonal[:, m.port_index - 1])) &
                            (np.abs(ts.z_diagonal[:, m.port_index - 1]) > 0) &
                            np.isfinite(ts.frequency_hz) & (ts.frequency_hz >= 1e3) & (ts.frequency_hz <= 1e9)) for m in maps)
         if valid:
-            add("group", group, group)
+            title, _ = group_presentation(group, maps)
+            heading = title if any(m.display_name.strip() for m in maps) else None
+            add("group", title, (group, heading))
         else:
             omitted[f"그룹: {group}"] = "1kHz~1GHz 범위에 유효한 임피던스가 없습니다."
     return pages, omitted
@@ -191,7 +203,7 @@ def _table(ws, headers, rows, row=4, column=2, number_columns=()):
                  number_format=NUMBER if i in number_columns else None)
 
 
-def _base_sheet(wb, name, config, kind, ts=None):
+def _base_sheet(wb, name, config, kind, ts=None, page_title=None):
     ws = wb.create_sheet(name)
     ws.sheet_view.showGridLines = False
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -204,7 +216,8 @@ def _base_sheet(wb, name, config, kind, ts=None):
     ws.sheet_format.defaultColWidth = 9
     ws.column_dimensions["A"].width = 9
     custom_title = config.settings.title.strip()
-    page_title = TITLES.get(kind, "")
+    if page_title is None:
+        page_title = TITLES.get(kind, "")
     if custom_title and custom_title != "Power Integrity Report":
         page_title = f"{custom_title} · {page_title}" if page_title else custom_title
     if page_title:
@@ -513,7 +526,10 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                 checkpoint(cancel)
                 if progress:
                     progress(f"시트 생성: {name}", index, len(pages))
-                ws = _base_sheet(wb, name, config, kind, ts)
+                heading = None
+                if kind == "group":
+                    group, heading = payload
+                ws = _base_sheet(wb, name, config, kind, ts, page_title=heading)
                 image_bottom = 4
                 if kind == "100":
                     _write_100(ws, payload, factor, unit, config.settings.use_priority)
@@ -531,10 +547,10 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                         path = render_placement(spd, config, side, Path(images) / f"placement-{side}.png")
                         image_bottom = max(image_bottom, _add_image(ws, path, "B4" if side_index == 0 else "P4", max_width=850))
                 elif kind == "group":
-                    path = render_group_plot(ts, config, payload, Path(images) / f"group-{index}.png")
+                    path = render_group_plot(ts, config, group, Path(images) / f"group-{index}.png")
                     image_bottom = _add_image(ws, path, "B4")
                     _write_pi(ws, [(m, values, flags) for m, values, flags in _spot_rows(config, ts)
-                                   if m.group == payload], factor, unit, column=16,
+                                   if m.group == group], factor, unit, column=16,
                               wide=len({mapping.site for mapping in _mappings(config, ts)}) > 8, detail=True,
                               channel_order=list(dict.fromkeys(mapping.channel for mapping in _mappings(config, ts))),
                               use_priority=config.settings.use_priority)

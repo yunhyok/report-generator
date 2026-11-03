@@ -306,15 +306,15 @@ class MainWindow(QMainWindow):
     def mapping_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        note = QLabel("같은 그룹은 한 그래프, 빈 그룹은 상세 그래프 제외. Excel(.xlsx) 1개를 이 화면에 끌어 놓거나 불러오세요. priority는 순위·구분명, group은 그룹입니다. 빈칸 유지, priority 입력 시 PI·CAP 순위 사용.")
+        note = QLabel("Excel(.xlsx) 1개를 끌어 놓거나 불러오세요. net: 보고서 표시명(실제 연결 유지), priority: 순위·구분명, group: 한 그래프로 묶기(빈 그룹은 상세 제외). 빈칸 유지 · priority 입력 시 PI·CAP 순위 사용.")
         note.setWordWrap(True)
         layout.addWidget(note)
         row = QHBoxLayout()
         self.priority_button = button("채널 순위 설정…", self.edit_priorities)
         self.channel_template_button = button("Excel 양식 저장…", self.export_channel_template)
         self.channel_import_button = button("Excel 설정 불러오기…", self.import_channel_settings)
-        self.channel_template_button.setToolTip("검색과 관계없이 사용 체크된 채널·사이트를 저장합니다. priority·group은 비워 둡니다.")
-        self.channel_import_button.setToolTip("채널명·사이트로 찾아 적용합니다. 빈칸은 유지하며 priority 입력 시 PI·CAP 우선순위를 켭니다.\nExcel(.xlsx) 1개를 채널·그룹 화면에 끌어 놓아도 됩니다.")
+        self.channel_template_button.setToolTip("검색과 관계없이 사용 체크된 채널·사이트를 저장합니다. priority·group·net은 비워 둡니다.")
+        self.channel_import_button.setToolTip("원래 채널명·사이트로 찾아 적용합니다. net은 보고서 표시명이며 실제 연결은 유지합니다.\n빈칸은 유지하며 priority 입력 시 PI·CAP 우선순위를 켭니다. Excel(.xlsx) 1개를 이 화면에 끌어 놓아도 됩니다.")
         self.priority_status = QLabel()
         self.priority_status.setWordWrap(False)
         self.priority_status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
@@ -327,7 +327,7 @@ class MainWindow(QMainWindow):
         self.update_priority_status()
         row = QHBoxLayout()
         self.map_filter = QLineEdit()
-        self.map_filter.setPlaceholderText("포트·Net·사이트·채널 검색")
+        self.map_filter.setPlaceholderText("포트·실제 Net·보고서 표시명·사이트·채널 검색")
         self.map_filter.textChanged.connect(self.filter_mapping)
         row.addWidget(self.map_filter, 1)
         row.addWidget(button("채널 추가", self.add_mapping))
@@ -342,11 +342,14 @@ class MainWindow(QMainWindow):
         row.addWidget(self.group_input, 1)
         row.addWidget(button("그룹 적용", self.apply_group))
         layout.addLayout(row)
-        self.mapping_table = make_table(["사용", "요약", "확인", "번호", "원본 포트", "SPD 포트", "Net", "사이트", "채널", "그룹", "Priority", "상태"])
+        self.mapping_table = make_table(["사용", "요약", "확인", "번호", "원본 포트", "SPD 포트", "SPD Net (실제 연결)", "사이트", "채널", "그룹", "Priority", "상태", "보고서 표시명"])
+        self.mapping_table.horizontalHeader().moveSection(12, 7)
+        self.mapping_table.horizontalHeaderItem(6).setToolTip("실제 SPD 연결에 사용하는 Net입니다. 보고서 이름만 바꾸려면 보고서 표시명을 수정하세요.")
+        self.mapping_table.horizontalHeaderItem(12).setToolTip("Excel의 net 열. 실제 SPD Net·채널·사이트와 별도입니다. 빈칸이면 기존 이름을 표시합니다.")
         self.mapping_table.setColumnHidden(10, True)
         for index in range(4):
             self.mapping_table.setColumnWidth(index, 55)
-        for index in (4, 5, 6, 8, 9):
+        for index in (4, 5, 6, 8, 9, 12):
             self.mapping_table.setColumnWidth(index, 180)
         self.mapping_table.itemChanged.connect(self.mapping_edited)
         layout.addWidget(self.mapping_table, 1)
@@ -496,7 +499,7 @@ class MainWindow(QMainWindow):
         for row in range(self.mapping_table.rowCount()):
             text = lambda col: self.mapping_table.item(row, col).text().strip()
             checked = lambda col: self.mapping_table.item(row, col).checkState() == Qt.CheckState.Checked
-            rows.append(ChannelMapping(int(text(3)) if text(3) else None, text(4), text(5), text(6), text(7), text(8), checked(0), checked(1), text(9), text(10), text(11), checked(2)))
+            rows.append(ChannelMapping(int(text(3)) if text(3) else None, text(4), text(5), text(6), text(7), text(8), checked(0), checked(1), text(9), text(10), text(11), checked(2), display_name=text(12)))
         return rows
 
     def collect_config(self, *, dcr=None):
@@ -522,7 +525,7 @@ class MainWindow(QMainWindow):
         for row, mapping in enumerate(self.config.mappings):
             for col, value in enumerate((mapping.selected, mapping.summary, mapping.confirmed)):
                 self.mapping_table.setItem(row, col, check_item(value))
-            values = (mapping.port_index, mapping.source_name, mapping.spd_port, mapping.net, mapping.site, mapping.channel, mapping.group, mapping.priority, mapping.status)
+            values = (mapping.port_index, mapping.source_name, mapping.spd_port, mapping.net, mapping.site, mapping.channel, mapping.group, mapping.priority, mapping.status, mapping.display_name)
             for col, value in enumerate(values, 3):
                 self.mapping_table.setItem(row, col, text_item(value, col not in (3, 4, 10, 11)))
         self.loading_table = False
@@ -549,7 +552,7 @@ class MainWindow(QMainWindow):
             if any(path == Path(source).resolve() for source in protected if source):
                 raise ValueError("입력 파일·프로젝트·불러온 설정 파일에는 양식을 덮어쓸 수 없습니다. 다른 이름으로 저장하세요.")
             write_channel_template(path, self.collect_mappings())
-            self.status.setText(f"Excel 양식 저장 완료: {path.name}. priority·group 입력 후 Excel 설정 불러오기를 누르세요.")
+            self.status.setText(f"Excel 양식 저장 완료: {path.name}. priority·group·net 입력 후 Excel 설정 불러오기를 누르세요.")
         except Exception as exc:
             self.error(exc)
 
@@ -565,7 +568,7 @@ class MainWindow(QMainWindow):
             return
         try:
             mappings = self.collect_mappings()
-            priorities, groups = read_channel_settings(path, mappings)
+            priorities, groups, nets = read_channel_settings(path, mappings)
             source = str(Path(path).resolve())
             updates = []
             for row, mapping in enumerate(mappings):
@@ -574,6 +577,8 @@ class MainWindow(QMainWindow):
                     updates.append((row, 10, priorities[channel]))
                 if mapping.selected and (channel, site) in groups:
                     updates.append((row, 9, groups[channel, site]))
+                if mapping.selected and (channel, site) in nets:
+                    updates.append((row, 12, nets[channel, site]))
             changed = bool(priorities) and not self.config.settings.use_priority
             with QSignalBlocker(self.mapping_table):
                 for row, column, value in updates:
@@ -587,7 +592,7 @@ class MainWindow(QMainWindow):
             if changed:
                 self.clear_preview()
             mode = "PI·CAP 순위 사용 중" if self.config.settings.use_priority else "PI·CAP 순위 사용 안 함 유지"
-            self.status.setText(f"Excel 설정 적용: 순위 {len(priorities)}채널 · 그룹 {len(groups)}항목. {mode}. "
+            self.status.setText(f"Excel 적용: 순위 {len(priorities)}채널 · 그룹 {len(groups)}개 · 표시명 {len(nets)}개. {mode}. "
                                 + ("미리보기를 갱신하세요." if changed else "기존 값과 같습니다."))
         except Exception as exc:
             self.error(exc)
@@ -627,6 +632,9 @@ class MainWindow(QMainWindow):
     def mapping_edited(self, item):
         if self.loading_table:
             return
+        if item.column() == 12:
+            self.clear_preview()
+            return
         if item.column() == 2:
             row = item.row()
             name = self.mapping_table.item(row, 5).text().strip()
@@ -657,7 +665,7 @@ class MainWindow(QMainWindow):
     def filter_mapping(self):
         needle = self.map_filter.text().casefold()
         for row in range(self.mapping_table.rowCount()):
-            text = " ".join(self.mapping_table.item(row, col).text() for col in range(4, 12))
+            text = " ".join(self.mapping_table.item(row, col).text() for col in range(4, self.mapping_table.columnCount()))
             self.mapping_table.setRowHidden(row, needle not in text.casefold())
 
     def selected_rows(self, table):

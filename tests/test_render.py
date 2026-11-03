@@ -1,3 +1,5 @@
+from functools import wraps
+
 import numpy as np
 from PIL import Image
 import pytest
@@ -5,6 +7,71 @@ import pytest
 from report_generator.core.models import (ChannelMapping, Component, PadShape, Port, ReportConfig,
     SpiceModel, SpdData, SurfacePad, TouchstoneData)
 from report_generator.core import render
+
+
+@pytest.mark.parametrize("names,title,legend", [
+    (("", ""), "G", None),
+    (("Alias_A", "Alias_A"), "Alias_A", None),
+    (("Alias_A", ""), "G", ["Alias_A (RAW) / SITE0", "RAW / SITE1"]),
+    (("_Rail$X$", "Alias_B"), "G", ["_Rail$X$ (RAW) / SITE0", "Alias_B (RAW) / SITE1"]),
+])
+def test_group_display_names_keep_members_and_show_partial_site_aliases(tmp_path, monkeypatch, names, title, legend):
+    config = ReportConfig(mappings=[
+        ChannelMapping(index + 1, channel="RAW", site=f"SITE{index}", group="G", display_name=name)
+        for index, name in enumerate(names)
+    ])
+    config.mappings.append(ChannelMapping(1, channel="EXCLUDED", site="SITE0", group="G",
+                                          selected=False, display_name="Not eligible"))
+    ts = TouchstoneData("synthetic", {}, [Port(1, "P1"), Port(2, "P2")],
+                       np.array([1e3, 1e6, 1e9]), np.array([[1, 2]] * 3, dtype=complex))
+    captured = {}
+    def capture(figure, path):
+        ax = figure.axes[0]
+        captured["title"] = ax.get_title()
+        captured["lines"] = len(ax.lines)
+        actual = ax.get_legend()
+        captured["legend"] = [text.get_text() for text in actual.get_texts()] if actual else None
+        if actual:
+            assert all(not text.get_parse_math() for text in actual.get_texts())
+        return str(path)
+    monkeypatch.setattr(render, "_finish", capture)
+    render.render_group_plot(ts, config, "G", tmp_path / "aliases.png")
+    assert captured == {"title": title, "lines": 2, "legend": legend}
+
+
+def test_many_mixed_names_render_outside_axes_and_inside_png(tmp_path, monkeypatch):
+    count = 36
+    config = ReportConfig(mappings=[
+        ChannelMapping(index + 1, channel=f"RAW_RAIL_{index:02}", site=f"SITE{index}",
+                       group="Mixed_names", display_name=f"VDD_RAIL_{index:02}")
+        for index in range(count)
+    ])
+    ts = TouchstoneData("synthetic", {}, [Port(i + 1, f"P{i + 1}") for i in range(count)],
+                       np.logspace(3, 9, 30),
+                       np.logspace(-2, 1, 30)[:, None] * np.arange(1, count + 1)[None, :])
+    captured = {}
+    original = render.FigureCanvasAgg.print_png
+    @wraps(original)
+    def capture(canvas, filename, *args, **kwargs):
+        canvas.draw()
+        ax = canvas.figure.axes[0]
+        legend = ax.get_legend()
+        box = legend.get_window_extent(canvas.get_renderer())
+        bounds = canvas.figure.bbox
+        assert box.x0 >= ax.bbox.x1
+        assert box.y1 == pytest.approx(ax.bbox.y1)
+        assert box.x0 >= bounds.x0 and box.x1 <= bounds.x1
+        assert box.y0 >= bounds.y0 and box.y1 <= bounds.y1
+        assert ax.bbox.width >= 1000 and ax.bbox.height >= 400
+        assert len(ax.lines) == count
+        captured["labels"] = [text.get_text() for text in legend.get_texts()]
+        return original(canvas, filename, *args, **kwargs)
+    monkeypatch.setattr(render.FigureCanvasAgg, "print_png", capture)
+    path = render.render_group_plot(ts, config, "Mixed_names", tmp_path / "mixed-names.png")
+    assert captured["labels"] == [
+        f"VDD_RAIL_{i:02} (RAW_RAIL_{i:02}) / SITE{i}" for i in range(count)]
+    with Image.open(path) as image:
+        assert image.width > 1320 and image.height > 594
 
 
 def test_geometry_rotation_bottom_mirror_and_unknown_dimensions(tmp_path, monkeypatch):

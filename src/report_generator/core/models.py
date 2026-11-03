@@ -122,6 +122,7 @@ class ChannelMapping:
     priority: str = ""
     status: str = "manual"
     confirmed: bool = True
+    display_name: str = ""
 
 
 @dataclass

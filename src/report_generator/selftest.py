@@ -66,6 +66,7 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 edited = load_workbook(template)
                 edited.active["C2"] = 1
                 edited.active["D2"] = "Load rails"
+                edited.active["E2"] = "VDD_CORE_IO"
                 edited.save(template)
                 edited.close()
                 config = ReportConfig(mappings=mappings, dcr=[DcrRow("SITE0", "POWER", 2)])
@@ -85,6 +86,8 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                     assert event.isAccepted()
                 config = window.collect_config()
                 assert config.settings.use_priority and config.mappings[0].group == "Load rails"
+                mapping = config.mappings[0]
+                assert (mapping.display_name, mapping.net, mapping.channel) == ("VDD_CORE_IO", "SITE0-POWER", "POWER")
                 window.grab().save(str(folder / "ui.png"))
                 state["stage"] = "preview"
                 runner.start("preview", {"config": config, "spd": spd, "ts": ts, "folder": str(folder)})
@@ -93,7 +96,8 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 assert len(report.sheets) == 6 and len(images) == 2
                 book = load_workbook(report.path, data_only=True)
                 pi = book["PI ALL@100MHz"]
-                assert "Load rails" in book.sheetnames
+                assert book["VDD_CORE_IO"]["A1"].value == "VDD_CORE_IO"
+                assert any(label == "VDD_CORE_IO · Load rails" for label, _ in images)
                 priority_column = next(cell.column for cell in pi[4] if cell.value == "Priority")
                 assert pi.cell(5, priority_column).value == 1
                 maximum_column = next(cell.column for cell in pi[4] if cell.value == "MAX.")

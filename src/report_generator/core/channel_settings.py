@@ -30,7 +30,7 @@ def _pairs(mappings: list[ChannelMapping]) -> dict[tuple[str, str], tuple[str, s
 
 
 def write_channel_template(path: str | Path, mappings: list[ChannelMapping]) -> None:
-    """Export selected complete pairs, without copying existing priority/group values."""
+    """Export selected complete pairs, leaving optional settings blank."""
     destination = _path(path)
     pairs = _pairs(mappings)
     if not pairs:
@@ -43,7 +43,7 @@ def write_channel_template(path: str | Path, mappings: list[ChannelMapping]) -> 
     book = Workbook()
     sheet = book.active
     sheet.title = "채널 설정"
-    sheet.append(["채널명", "사이트", "priority", "group"])
+    sheet.append(["채널명", "사이트", "priority", "group", "net"])
     for number, pair in enumerate(pairs.values(), start=2):
         for column, value in enumerate(pair, start=1):
             cell = sheet.cell(number, column, value)
@@ -53,12 +53,13 @@ def write_channel_template(path: str | Path, mappings: list[ChannelMapping]) -> 
         cell.fill = PatternFill("solid", fgColor="E8EBEF")
         cell.alignment = Alignment(horizontal="center", vertical="center")
     channel_width = min(80, max(36, max(len(channel) for channel, _ in pairs.values()) + 6))
-    for column, width in {"A": channel_width, "B": 20, "C": 22, "D": 28}.items():
+    for column, width in {"A": channel_width, "B": 20, "C": 22, "D": 28, "E": 36}.items():
         sheet.column_dimensions[column].width = width
     sheet.column_dimensions["D"].number_format = "@"  # Keep plot names such as 1-2 as text in Excel.
+    sheet.column_dimensions["E"].number_format = "@"
     sheet.row_dimensions[1].height = 24
     sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = f"A1:D{len(pairs) + 1}"
+    sheet.auto_filter.ref = f"A1:E{len(pairs) + 1}"
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".xlsx", dir=destination.parent, delete=False) as stream:
@@ -87,15 +88,15 @@ def _cell_text(cell, field: str, row_number: int) -> str:
     elif not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value):
         if value == int(value):
             return str(int(value))
-        if field == "group":
+        if field in {"group", "net"}:
             return str(value)
     raise ValueError(f"Excel {row_number}행 {field}: 텍스트 또는 올바른 정수 값을 입력하세요.")
 
 
 def read_channel_settings(
     path: str | Path, mappings: list[ChannelMapping],
-) -> tuple[dict[str, str], dict[tuple[str, str], str]]:
-    """Validate the entire first sheet and return sparse priority/group updates."""
+) -> tuple[dict[str, str], dict[tuple[str, str], str], dict[tuple[str, str], str]]:
+    """Validate the entire first sheet and return sparse priority/group/net updates."""
     source = _path(path)
     try:
         book = load_workbook(source, read_only=True, data_only=False)
@@ -111,7 +112,7 @@ def read_channel_settings(
         # Third-party writers may omit or understate dimensions; stream the actual cells.
         sheet.reset_dimensions()
         aliases = {"채널명": "channel", "channel": "channel", "사이트": "site", "site": "site",
-                   "priority": "priority", "group": "group"}
+                   "priority": "priority", "group": "group", "net": "net"}
         columns = {}
         for cell in next(sheet.iter_rows(min_row=1, max_row=1), ()):
             header = str(cell.value or "").strip().casefold()
@@ -122,13 +123,14 @@ def read_channel_settings(
                 columns[field] = cell.column
         if not {"channel", "site"} <= columns.keys():
             raise ValueError("Excel 1행에 채널명(channel), 사이트(site) 제목이 필요합니다.")
-        if not {"priority", "group"} & columns.keys():
-            raise ValueError("Excel 1행에 priority 또는 group 제목이 하나 이상 필요합니다.")
+        if not {"priority", "group", "net"} & columns.keys():
+            raise ValueError("Excel 1행에 priority, group, net 중 하나 이상의 제목이 필요합니다.")
         # shortcut: unusually large/sparse sheets are rejected; use a dedicated settings sheet.
         last_column = max(columns.values())
         targets = _pairs(mappings)
         priorities: dict[str, str] = {}
         groups: dict[tuple[str, str], str] = {}
+        nets: dict[tuple[str, str], str] = {}
         seen_pairs: dict[tuple[str, str], int] = {}
         priority_rows: dict[str, int] = {}
         for number, row in enumerate(sheet.iter_rows(min_row=2, max_col=last_column), start=2):
@@ -136,8 +138,8 @@ def read_channel_settings(
                 raise ValueError("채널 설정 시트가 너무 큽니다. 불필요한 행·열을 삭제하거나 새 양식에 값을 복사하세요.")
             values = {field: _cell_text(row[column - 1], field, number)
                       for field, column in columns.items()}
-            priority, group = values.get("priority", ""), values.get("group", "")
-            if not priority and not group:
+            priority, group, net = (values.get(field, "") for field in ("priority", "group", "net"))
+            if not priority and not group and not net:
                 continue
             key = (values["channel"].casefold(), values["site"].casefold())
             if not all(key):
@@ -160,8 +162,10 @@ def read_channel_settings(
                 priority_rows.setdefault(key[0], number)
             if group:
                 groups[key] = group
-        if not priorities and not groups:
-            raise ValueError("적용할 priority 또는 group 값이 없습니다. 빈 셀은 기존 설정을 유지합니다.")
-        return priorities, groups
+            if net:
+                nets[key] = net
+        if not priorities and not groups and not nets:
+            raise ValueError("적용할 priority, group, net 값이 없습니다. 빈 셀은 기존 설정을 유지합니다.")
+        return priorities, groups, nets
     finally:
         book.close()

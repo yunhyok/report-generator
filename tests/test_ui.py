@@ -47,7 +47,7 @@ def test_model_and_instance_overrides(window):
     assert window.component_table.item(0, 4).text() == "1uF"
 
 
-@pytest.mark.parametrize("column", [9, 10])
+@pytest.mark.parametrize("column", [9, 10, 12])
 @pytest.mark.parametrize("confirmed", [False, True])
 def test_metadata_edit_preserves_confirmation(window, column, confirmed):
     window.config.mappings = [ChannelMapping(net="RAIL/2", site="SITE2", channel="RAIL", confirmed=confirmed, status="기존 연결 상태")]
@@ -537,7 +537,7 @@ def channel_workbook(tmp_path, rows):
 
 def test_channel_template_exports_live_selected_rows_despite_filter_and_partial_dcr(window, monkeypatch, tmp_path):
     from openpyxl import load_workbook
-    window.config.mappings = [ChannelMapping(channel="OLD", site="S0", group="G", priority="2"),
+    window.config.mappings = [ChannelMapping(channel="OLD", site="S0", group="G", priority="2", display_name="Alias"),
                               ChannelMapping(channel="B", site="S1"),
                               ChannelMapping(channel="OFF", site="S0", selected=False),
                               ChannelMapping(channel="INCOMPLETE")]
@@ -549,8 +549,8 @@ def test_channel_template_exports_live_selected_rows_despite_filter_and_partial_
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **kw: (str(path.with_suffix("")), ""))
     window.export_channel_template()
     book = load_workbook(path)
-    assert list(book.active.values) == [("채널명", "사이트", "priority", "group"),
-                                        ("LIVE", "S0", None, None), ("B", "S1", None, None)]
+    assert list(book.active.values) == [("채널명", "사이트", "priority", "group", "net"),
+                                        ("LIVE", "S0", None, None, None), ("B", "S1", None, None, None)]
     book.close()
     assert not window.config.settings.use_priority
     assert window.config.channel_settings_source_path == ""
@@ -590,7 +590,7 @@ def test_channel_import_matches_live_identities_and_propagates_without_confirmat
 @pytest.mark.parametrize("enabled", [False, True])
 def test_channel_group_only_import_preserves_priority_state_and_unchanged_preview(window, monkeypatch, tmp_path, enabled):
     window.config.settings.use_priority = enabled
-    window.config.mappings = [ChannelMapping(channel="A", site="S0", priority="3", group="same")]
+    window.config.mappings = [ChannelMapping(channel="A", site="S0", priority="3", group="same", display_name="Alias")]
     window.fill_mappings()
     seed_preview(window)
     path = channel_workbook(tmp_path, [("채널명", "사이트", "group"), ("A", "S0", "same")])
@@ -598,6 +598,7 @@ def test_channel_group_only_import_preserves_priority_state_and_unchanged_previe
     window.import_channel_settings()
     assert window.config.settings.use_priority == enabled
     assert window.mapping_table.item(0, 10).text() == "3"
+    assert window.mapping_table.item(0, 12).text() == "Alias"
     assert window.preview_book == "old-preview.xlsx"
     assert "기존 값과 같습니다" in window.status.text()
     assert window.config.channel_settings_source_path == str(path.resolve())
@@ -668,7 +669,7 @@ def test_channel_excel_cancel_preserves_settings_and_preview(window, monkeypatch
 
 
 def test_priority_only_channel_import_enables_application_and_preserves_group(window, monkeypatch, tmp_path):
-    window.config.mappings = [ChannelMapping(channel="A", site="S0", priority="2", group="existing")]
+    window.config.mappings = [ChannelMapping(channel="A", site="S0", priority="2", group="existing", display_name="Alias")]
     window.fill_mappings()
     seed_preview(window)
     path = channel_workbook(tmp_path, [("채널명", "사이트", "priority"), ("A", "S0", "2")])
@@ -676,6 +677,7 @@ def test_priority_only_channel_import_enables_application_and_preserves_group(wi
     window.import_channel_settings()
     assert window.config.settings.use_priority
     assert window.mapping_table.item(0, 9).text() == "existing"
+    assert window.mapping_table.item(0, 12).text() == "Alias"
     assert_preview_empty(window)
 
 
@@ -859,3 +861,87 @@ def test_channel_drop_commits_active_identity_editor_before_matching(window, app
     assert window.mapping_table.item(0, 8).text() == "A"
     assert window.mapping_table.item(0, 9).text() == "new"
     assert window.config.channel_settings_source_path == str(path.resolve())
+
+
+@pytest.mark.parametrize("route", ["picker", "drop"])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_net_only_import_changes_display_name_without_physical_or_rank_changes(window, app, monkeypatch, tmp_path, route, enabled):
+    from dataclasses import asdict
+    from PySide6.QtCore import QMimeData, QUrl
+    window.config.settings.use_priority = enabled
+    window.config.mappings = [ChannelMapping(1, "source", "SPD_PORT", "U0_VDD", "01", "VDD", group="G", priority="3", status="기존 상태", confirmed=False),
+                              ChannelMapping(2, "duplicate", "SPD_PORT", "U0_VDD", "01", "vdd", group="G", priority="3"),
+                              ChannelMapping(site="01", channel="VDD", selected=False, display_name="excluded"),
+                              ChannelMapping(site="02", channel="VDD", display_name="other site")]
+    window.config.dcr = [DcrRow("01", "VDD", 4.2)]
+    old_dcr = window.config.dcr
+    window.fill_mappings()
+    window.fill_dcr()
+    window.add_dcr()
+    dcr_text = [[window.dcr_table.item(row, col).text() for col in range(3)] for row in range(2)]
+    before = [asdict(mapping) for mapping in window.collect_mappings()]
+    seed_preview(window)
+    alias = "DUT3-POWER/VRM::VDD"
+    path = channel_workbook(tmp_path, [("net", "site", "channel"), (alias, " 01 ", " vdd ")])
+    if route == "picker":
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: (str(path), ""))
+        window.import_channel_settings()
+    else:
+        window.tabs.setCurrentIndex(1)
+        window.show()
+        app.processEvents()
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(path))])
+        send_channel_drag(window.mapping_table.viewport(), mime)
+    mappings = window.collect_mappings()
+    assert [mapping.display_name for mapping in mappings] == [alias, alias, "excluded", "other site"]
+    for previous, current in zip(before, mappings):
+        current = asdict(current)
+        current["display_name"] = previous["display_name"]
+        assert current == previous
+    assert window.config.settings.use_priority == enabled
+    assert window.config.dcr is old_dcr
+    assert [[window.dcr_table.item(row, col).text() for col in range(3)] for row in range(2)] == dcr_text
+    assert "표시명 1개" in window.status.text()
+    assert window.config.channel_settings_source_path == str(path.resolve())
+    assert_preview_empty(window)
+
+
+def test_report_display_name_is_editable_clearable_searchable_and_preserves_raw_mapping(window):
+    window.config.mappings = [ChannelMapping(net="U0_PHYSICAL_NET", channel="RAW_CHANNEL", site="SITE0", group="G", priority="2", status="사용자 확인")]
+    window.fill_mappings()
+    assert window.mapping_table.horizontalHeaderItem(12).text() == "보고서 표시명"
+    assert "실제 연결" in window.mapping_table.horizontalHeaderItem(6).text()
+    assert window.mapping_table.horizontalHeader().visualIndex(12) == 7
+    assert window.mapping_table.item(0, 12).flags() & Qt.ItemFlag.ItemIsEditable
+    seed_preview(window)
+    window.mapping_table.item(0, 12).setText("DISPLAY_ALIAS")
+    mapping = window.collect_config().mappings[0]
+    assert (mapping.net, mapping.channel, mapping.site, mapping.group, mapping.priority, mapping.confirmed, mapping.status) == ("U0_PHYSICAL_NET", "RAW_CHANNEL", "SITE0", "G", "2", True, "사용자 확인")
+    assert mapping.display_name == "DISPLAY_ALIAS"
+    assert_preview_empty(window)
+    window.map_filter.setText("display_alias")
+    assert not window.mapping_table.isRowHidden(0)
+    window.map_filter.setText("physical_net")
+    assert not window.mapping_table.isRowHidden(0)
+    seed_preview(window)
+    window.mapping_table.item(0, 12).setText("")
+    assert window.collect_config().mappings[0].display_name == ""
+    assert window.mapping_table.item(0, 6).text() == "U0_PHYSICAL_NET"
+    assert window.mapping_table.item(0, 2).checkState() == Qt.CheckState.Checked
+    assert_preview_empty(window)
+
+
+def test_report_display_name_roundtrips_through_gui_project_save_open(window, monkeypatch, tmp_path):
+    window.config.mappings = [ChannelMapping(net="PHYSICAL", channel="CHANNEL", site="SITE0")]
+    window.fill_mappings()
+    window.mapping_table.item(0, 12).setText("Report name")
+    path = tmp_path / "display.report.json"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **kw: (str(path), ""))
+    assert window.save_project()
+    window.new_project()
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: (str(path), ""))
+    window.open_project()
+    assert window.mapping_table.item(0, 12).text() == "Report name"
+    mapping = window.collect_config().mappings[0]
+    assert (mapping.net, mapping.channel, mapping.site, mapping.display_name) == ("PHYSICAL", "CHANNEL", "SITE0", "Report name")

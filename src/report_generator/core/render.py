@@ -15,6 +15,7 @@ from matplotlib.ticker import FuncFormatter, NullFormatter
 
 from .models import ReportConfig, SpdData, TouchstoneData
 from .capacitance import component_active, format_capacitance, resolved_capacitance
+from .mapping import group_presentation
 
 
 FONT = FontProperties(family="Malgun Gothic", size=15)
@@ -47,7 +48,12 @@ def placement_components(spd: SpdData, config: ReportConfig, side: str):
 def _finish(fig: Figure, output_path: str | Path) -> str:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    FigureCanvasAgg(fig).print_png(str(path))
+    canvas = FigureCanvasAgg(fig)
+    legend = fig.axes[0].get_legend()
+    if legend is not None:
+        canvas.print_figure(str(path), format="png", bbox_inches="tight", bbox_extra_artists=[legend])
+    else:
+        canvas.print_png(str(path))
     fig.clear()
     return str(path)
 
@@ -68,6 +74,7 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
                 m.group == group and m.port_index is not None]
     if not mappings:
         raise ValueError("그룹에 선택한 Touchstone 포트가 없습니다.")
+    title, show_names = group_presentation(group, mappings)
     channels = list(dict.fromkeys(m.channel for m in mappings))
     sites = list(dict.fromkeys(m.site for m in mappings))
     fig = Figure(figsize=(12, 5.4), dpi=110, facecolor="white")
@@ -91,7 +98,8 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
         style = "solid" if style_index == 0 else (0, (1 + style_index // 4, 1 + style_index % 4))
         ax.plot(frequency / 1e6, y, color=COLORS[color_index % len(COLORS)],
                 linestyle=style, linewidth=.85,
-                label=f"{m.channel} / {m.site}")
+                label=f"{m.display_name.strip()} ({m.channel}) / {m.site}"
+                if m.display_name.strip() else f"{m.channel} / {m.site}")
         plotted += 1
     if not plotted:
         raise ValueError("그룹에 그래프로 표시할 유효한 임피던스가 없습니다.")
@@ -103,7 +111,14 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
     valid_frequencies = frequency[in_range & np.isfinite(frequency)]
     if len(valid_frequencies) > 1:
         ax.set_xlim(valid_frequencies.min() / 1e6, valid_frequencies.max() / 1e6)
-    ax.set_title(group, fontproperties=TITLE_FONT, pad=15, parse_math=False)
+    ax.set_title(title, fontproperties=TITLE_FONT, pad=15, parse_math=False)
+    if show_names:
+        legend = ax.legend(handles=ax.lines, labels=[line.get_label() for line in ax.lines],
+                           prop=FontProperties(family="Malgun Gothic", size=9),
+                           loc="upper left", bbox_to_anchor=(1.02, 1), borderaxespad=0)
+        legend.set_in_layout(False)
+        for text in legend.get_texts():
+            text.set_parse_math(False)
     ax.set_xlabel("Frequency [MHz]")
     ax.set_ylabel(f"|Zii| [{unit}]")
     ax.grid(True, which="major", color="#d8d8d8", linewidth=.7)

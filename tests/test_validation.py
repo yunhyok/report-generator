@@ -55,9 +55,14 @@ def test_shared_pipeline_export_and_reference_comparison(tmp_path):
     book[item["sheet"]][item["cell"]] = 123
     book.save(reference)
     book.close()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["config"]["mappings"][0]["display_name"] = "PI_ALL"
+    path.write_text(json.dumps(raw), encoding="utf-8")
     output = tmp_path / "checked.xlsx"
     audit = validate_project(path, output, reference)
     assert audit["status"] == "passed"  # Reference differences do not make a production failure.
+    assert "PI_ALL" in audit["sheets"]
+    assert audit["reference_comparison"]["PI_DETAIL"]["matches"] == 5
     assert audit["reference_status"] == "differences"
     assert audit["reference_comparison"]["PI"]["differences"] == 1
     assert audit["reference_comparison"]["CAP"]["matches"] == 1

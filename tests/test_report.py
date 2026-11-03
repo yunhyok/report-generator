@@ -81,6 +81,9 @@ def test_partial_and_summary_flags_and_safe_unique_names(tmp_path):
     assert pages[:3] == ["PI ALL@100MHz", "PI ALL", "PI ALL (2)"]
     assert len(pages[-1]) <= 31 and all(c not in pages[-1] for c in ":/?*[]")
     assert "DCR" in omitted
+    config.mappings[0].display_name = "A" * 30 + "'middle"
+    config.mappings[1].display_name = "😀" * 16
+    assert plan_pages(config, None, ts)[0][-2:] == ["A" * 30, "😀" * 15]
     config.mappings[0].group = config.mappings[1].group = ""
     result = build_report(config, None, ts, tmp_path / "summary.xlsx")
     assert result.sheets == ["PI ALL@100MHz", "PI ALL"]
