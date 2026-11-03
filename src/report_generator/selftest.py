@@ -82,7 +82,10 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 assert dcr.cell(5, site_column).value == 2
                 assert all(sheet.freeze_panes is None for sheet in book)
                 book.close()
-                assert (Path(__file__).parent / "docs" / "help.html").is_file()
+                window.open_help()
+                assert window.help_window.isVisible()
+                assert "채널 순위 설정" in window.help_window.browser.toPlainText()
+                window.help_window.close()
                 assert not window.windowIcon().isNull()
                 state["ok"] = True
                 state["sheets"] = report.sheets

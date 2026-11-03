@@ -4,47 +4,82 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>SPD Report Generator 0.1.5 · 사용 설명서</title>
+<title>SPD Report Generator 0.1.6 · 사용 설명서</title>
 <style>
-:root{color-scheme:dark;--bg:#202226;--panel:#2b2e34;--inset:#1d2025;--text:#eceef1;--muted:#bdc5d0;--line:#626c7a;--accent:#8fc1ff}
-*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:1rem}body{margin:0;background:var(--bg);color:var(--text);font:18px/1.8 "Segoe UI","Malgun Gothic",sans-serif;word-break:keep-all;overflow-wrap:anywhere}a{color:var(--accent);text-underline-offset:.2em}a:focus-visible{outline:3px solid var(--accent);outline-offset:4px}header,main,footer{max-width:1180px;margin:auto;padding:2rem}header{padding-bottom:1rem}h1{font-size:clamp(1.9rem,4vw,2.65rem);line-height:1.3;margin:.5rem 0 1rem}h2{font-size:1.65rem;line-height:1.4;margin:0 0 1rem}h3{font-size:1.2rem;margin:1.5rem 0 .5rem}p{margin:.7rem 0}strong{color:#fff}small,.muted{color:var(--muted)}.eyebrow{color:var(--accent);font-weight:600;letter-spacing:.04em}.layout{display:grid;grid-template-columns:235px minmax(0,1fr);gap:1.75rem}nav{align-self:start;position:sticky;top:1rem;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:1rem;font-size:1rem}nav p{margin:0 0 .5rem;font-weight:700}nav a{display:block;padding:.35rem 0}section{background:var(--panel);border:1px solid #505761;border-radius:7px;padding:1.7rem;margin-bottom:1.5rem}ul,ol{padding-left:1.5rem}li{margin:.5rem 0}.callout{border-left:4px solid var(--accent);background:var(--inset);padding:.8rem 1rem;margin:1rem 0}.table-wrap{overflow-x:auto;margin:1rem 0}table{border-collapse:collapse;width:100%;font-size:1rem}th,td{text-align:left;vertical-align:top;border:1px solid var(--line);padding:.7rem .8rem}th{background:#353a42;font-weight:700}code,kbd{background:var(--inset);border:1px solid #505761;border-radius:3px;padding:.1rem .35rem;font: .95em/1.6 Consolas,"Malgun Gothic",monospace}pre{white-space:pre-wrap;background:var(--inset);padding:1rem;border:1px solid var(--line);border-radius:4px;overflow:auto}pre code{padding:0;border:0}.formula{font-family:Consolas,"Malgun Gothic",monospace;background:var(--inset);padding:1rem;overflow-x:auto;white-space:nowrap}.skip{position:absolute;left:1rem;top:-5rem;padding:.5rem;background:var(--panel)}.skip:focus{top:1rem}footer{padding-top:0;color:var(--muted);font-size:1rem}.top-link{font-size:1rem}
-@media(max-width:850px){.layout{display:block}nav{position:static;margin-bottom:1.5rem}nav a{display:inline-block;margin-right:1rem}header,main,footer{padding:1.2rem}section{padding:1.2rem}body{font-size:18px}}
-@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
-@media print{:root{color-scheme:light;--bg:white;--panel:white;--inset:#f3f5f7;--text:#16181b;--muted:#40464e;--line:#a0a6ad;--accent:#184b82}body{font-size:11pt;line-height:1.65}header,main,footer{max-width:none;padding:0}.layout{display:block}nav,.skip,.top-link{display:none}section{border:0;border-top:1px solid #aaa;border-radius:0;padding:1rem 0;margin:0}h1{font-size:25pt}h2{font-size:18pt;break-after:avoid}h3{break-after:avoid}strong{color:inherit}th{background:#e8edf3}tr,.callout,.formula{break-inside:avoid}a{color:#184b82}table{font-size:10pt}.table-wrap{overflow:visible}code,kbd,pre{border-color:#c0c5cb}footer{margin-top:1rem}}
+body { background-color: #202226; color: #eceef1; font-family: "Malgun Gothic", "Segoe UI", sans-serif; font-size: 11pt; margin: 18px; }
+p, li { line-height: 145%; }
+p { margin-top: 7px; margin-bottom: 7px; }
+a { color: #8fc1ff; text-decoration: underline; }
+h1 { color: #ffffff; font-size: 22pt; margin-top: 14px; margin-bottom: 14px; }
+h2 { color: #ffffff; font-size: 17pt; margin-top: 30px; margin-bottom: 10px; }
+h3 { color: #eceef1; font-size: 13pt; margin-top: 22px; margin-bottom: 8px; }
+strong, b { color: #ffffff; }
+small, .muted { color: #bdc5d0; }
+.eyebrow { color: #8fc1ff; font-weight: bold; }
+.callout, .formula { background-color: #2b2e34; color: #eceef1; padding: 10px; margin-top: 12px; margin-bottom: 12px; }
+table { border-collapse: collapse; margin-top: 12px; margin-bottom: 12px; }
+th, td { color: #eceef1; border: 1px solid #626c7a; padding: 8px; vertical-align: top; }
+th { background-color: #353a42; font-weight: bold; }
+td { background-color: #2b2e34; }
+code, kbd, pre { color: #eceef1; background-color: #1d2025; font-family: Consolas, "Malgun Gothic", monospace; }
+pre { white-space: pre-wrap; padding: 10px; }
+header, main, footer { max-width: 1180px; margin: auto; padding: 20px; }
+nav { background-color: #2b2e34; border: 1px solid #626c7a; padding: 14px; }
+nav p { margin: 6px 0; }
+section { margin-bottom: 24px; }
+@media screen and (min-width: 850px) {
+  .layout { display: grid; grid-template-columns: 235px minmax(0, 1fr); gap: 28px; }
+  nav { align-self: start; position: sticky; top: 16px; }
+}
+@media print {
+  body { background: white; color: #16181b; font-size: 11pt; }
+  header, main, footer { max-width: none; padding: 0; }
+  nav, .skip, .top-link { display: none; }
+  h1, h2, h3, b, strong, th, td, code, kbd, pre, small, .muted, .eyebrow, .callout, .formula { color: #16181b; }
+  h2, h3 { break-after: avoid; }
+  th { background: #e8edf3; }
+  td { background: white; }
+  .callout, .formula, code, kbd, pre { background: #f3f5f7; }
+  a { color: #184b82; }
+  tr, .callout, .formula { break-inside: avoid; }
+}
 </style>
 </head>
-<body id="top">
+<body>
+<a name="top"></a>
 <a class="skip" href="#quickstart">본문으로 건너뛰기</a>
 <header>
-<p class="eyebrow">SPD REPORT GENERATOR · v0.1.5</p>
+<p class="eyebrow">SPD REPORT GENERATOR · v0.1.6</p>
 <h1>입력 파일에서 Excel 보고서까지</h1>
 <p>SPD의 부품·모델·배치, Touchstone의 임피던스, 직접 입력한 DCR을 조합해 보고서를 만듭니다. <strong>파일 처리는 이 PC에서 이루어지며 클라우드 업로드나 계정 연결이 필요하지 않습니다.</strong></p>
-<p class="muted">프로그램에서 <b>Help → 사용 설명서</b> 또는 <kbd>F1</kbd>로 이 문서를 엽니다. 인터넷 없이 읽거나 브라우저의 인쇄 기능으로 저장할 수 있습니다.</p>
+<p class="muted">프로그램에서 <b>Help → 사용 설명서</b> 또는 <kbd>F1</kbd>로 이 문서를 엽니다. 프로그램 안의 전용 창에서 인터넷 없이 읽습니다. 목차·본문 링크와 뒤로·앞으로·목차 버튼으로 이동할 수 있습니다. 시작 메뉴의 Help도 같은 전용 창을 엽니다.</p>
 </header>
 <main class="layout">
 <nav aria-label="사용 설명서 목차">
+<a name="contents"></a>
 <p>작업 순서와 참고</p>
-<a href="#quickstart">1. 처음 실행하기</a>
-<a href="#inputs">2. 입력과 지원 범위</a>
-<a href="#mapping">3. 채널·그룹 연결</a>
-<a href="#capacitors">4. CAP 용량·활성 상태</a>
-<a href="#dcr">5. DCR 가져오기</a>
-<a href="#output">6. 미리보기·출력</a>
-<a href="#placement">7. 배치도 해석</a>
-<a href="#calculation">8. 계산식과 단위</a>
-<a href="#projects">9. 프로젝트 저장</a>
-<a href="#troubleshooting">10. 결과가 다를 때</a>
-<a href="#validation">11. 화면 없이 생성·검증</a>
+<p><a href="#quickstart">1. 처음 실행하기</a></p>
+<p><a href="#inputs">2. 입력과 지원 범위</a></p>
+<p><a href="#mapping">3. 채널·그룹 연결</a></p>
+<p><a href="#capacitors">4. CAP 용량·활성 상태</a></p>
+<p><a href="#dcr">5. DCR 가져오기</a></p>
+<p><a href="#output">6. 미리보기·출력</a></p>
+<p><a href="#placement">7. 배치도 해석</a></p>
+<p><a href="#calculation">8. 계산식과 단위</a></p>
+<p><a href="#projects">9. 프로젝트 저장</a></p>
+<p><a href="#troubleshooting">10. 결과가 다를 때</a></p>
+<p><a href="#validation">11. 화면 없이 생성·검증</a></p>
 </nav>
 <div>
-<section id="quickstart">
+<section>
+<a name="quickstart"></a>
 <h2>1. 처음 실행하기</h2>
 <ol>
-<li>Windows x64용 <code>SPD-Report-Generator-v0.1.5-Setup-x64.exe</code>를 실행해 설치합니다. 설치에는 관리자 권한이 필요합니다. 기본 경로는 <code>C:\Program Files\SPD Report Generator</code>이며, 설치 화면에서 다른 드라이브나 폴더를 선택할 수 있습니다. 바탕 화면 바로가지는 설치 중 선택할 수 있습니다.</li>
+<li>Windows x64용 <code>SPD-Report-Generator-v0.1.6-Setup-x64.exe</code>를 실행해 설치합니다. 설치에는 관리자 권한이 필요합니다. 기본 경로는 <code>C:\Program Files\SPD Report Generator</code>이며, 설치 화면에서 다른 드라이브나 폴더를 선택할 수 있습니다. 바탕 화면 바로가지는 설치 중 선택할 수 있습니다.</li>
 <li>시작 메뉴에서 <b>SPD Report Generator</b>를 엽니다. 같은 메뉴의 <b>Help</b>로 이 설명서를 바로 열 수 있습니다.</li>
 <li><b>1 입력</b>에서 필요한 SPD·Touchstone 파일을 고르고 <b>파일 읽기</b>를 누릅니다. 제목, 제품명, 보드 종류와 작성일 등을 입력합니다.</li>
 <li><b>2 채널·그룹</b>에서 사용할 행을 고르고 Net·사이트·채널·SPD 포트를 확인합니다. 모호한 연결을 해결한 뒤 <b>확인</b>에 체크합니다.</li>
-<li>제품에 순위가 있으면 같은 화면에서 <b>채널 순위 설정…</b>을 열어 채널별 순위나 구분명을 지정합니다. 순위가 없는 제품은 이 단계를 건너뜁니다.</li>
+<li>순위를 지정하려면 <b>채널 순위 설정…</b>을 엽니다. 채널 옆 입력 칸을 클릭해 순위를 입력하고, PI·CAP 표에 적용할지 선택한 뒤 <b>설정 저장</b>을 누릅니다.</li>
 <li>필요하면 <b>3 CAP·DCR</b>에서 용량을 수정하거나 DCR을 입력합니다.</li>
 <li><b>4 미리보기·출력 → 미리보기 갱신</b>으로 포함될 페이지를 살핀 뒤 <b>Excel 저장…</b>을 누릅니다.</li>
 </ol>
@@ -54,7 +89,8 @@
 <p>v0.1.4에서 업데이트할 때는 작업을 저장하고 프로그램을 닫은 뒤 <b>Windows 설정 → 앱 → 설치된 앱</b>에서 기존 SPD Report Generator를 먼저 제거하세요. 그런 다음 새 설치 파일을 실행해 설치합니다. 프로젝트·보고서와 원본 입력 파일은 제거되지 않습니다. v0.1.5부터 기본 설치 위치는 <code>C:\Program Files\SPD Report Generator</code>이며, 설치 화면에서 다른 드라이브나 폴더를 선택할 수 있습니다.</p>
 <p>제거하려면 <b>Windows 설정 → 앱 → 설치된 앱</b>에서 SPD Report Generator를 찾아 <b>제거</b>를 선택합니다. 직접 저장한 프로젝트·보고서와 원본 입력 파일은 제거하지 않습니다.</p>
 </section>
-<section id="inputs">
+<section>
+<a name="inputs"></a>
 <h2>2. 입력과 지원 범위</h2>
 <div class="table-wrap"><table>
 <thead><tr><th scope="col">입력</th><th scope="col">사용하는 내용</th><th scope="col">확인할 점</th></tr></thead>
@@ -67,7 +103,8 @@
 <p>SPD의 UTF-8 또는 CP949 식별자를 읽으며, 해독할 수 없는 식별자를 다른 문자로 바꿔 연결하지 않습니다. 한 파일을 읽지 못해도 다른 입력이 유효하면 해당 데이터로 작업할 수 있습니다. 화면 아래 로그에서 오류와 제외 사유를 확인하세요.</p>
 <p><b>접지 Net (쉼표 구분)</b>에는 추가 접지 이름을 입력할 수 있습니다. 예: <code>GND, DGND, RETURN_A</code>. SPD에 정의된 접지와 함께 CAP의 전원–접지 연결을 판단합니다. Net 이름과 명시된 alias 관계를 사용하며 비슷한 이름을 임의로 합치지 않습니다.</p>
 </section>
-<section id="mapping">
+<section>
+<a name="mapping"></a>
 <h2>3. 채널·그룹 연결</h2>
 <p>자동 제안은 작업을 시작하기 위한 후보입니다. <strong>Touchstone 행렬의 포트 번호와 SPD의 포트 번호가 같다는 이유만으로 같은 연결이라고 판단하지 마세요.</strong> 이름이나 헤더의 포트 설명이 실제 추출 설정과 일치하는지 확인해야 합니다.</p>
 <div class="table-wrap"><table>
@@ -95,10 +132,15 @@
 <p>행을 고르는 것과 <b>사용</b> 체크는 별개입니다. 여러 행은 <kbd>Ctrl</kbd> 또는 <kbd>Shift</kbd>로 선택할 수 있습니다. <b>채널 추가</b>로 직접 행을 만들고 <b>선택 행 삭제</b>로 지울 수 있습니다. 같은 Touchstone 포트를 여러 행에서 사용하거나 사이트·채널을 중복 선택하면 출력 전에 수정해야 합니다.</p>
 <p>SPD 포트·Net·사이트·채널을 바꾸면 <b>확인</b> 체크가 해제됩니다. 연결을 다시 검토한 뒤 확인해 주세요. 그룹·Priority만 바꾸면 기존 확인 상태를 유지합니다. 입력한 SPD 포트가 원본에 없으면 확인과 출력을 막습니다.</p>
 <h3>채널 순위와 순위 외 구간</h3>
-<p><b>채널 순위 설정…</b>에서 순위를 사용하도록 선택하면 한 채널의 모든 사이트에 같은 값이 적용됩니다. 숫자 <code>1</code>, <code>2</code>는 낮은 숫자부터 표시하며 동순위도 허용합니다. 순위 밖에서 묶을 채널에는 <code>보조 전원</code>처럼 같은 구분명을 입력하세요. 이름도 지정하지 않은 채널은 빈칸으로 둡니다.</p>
-<p>PI와 CAP 표는 숫자 순위 다음에 구분명별 채널을 놓고, 빈칸인 채널은 마지막에 놓습니다. 각 구간은 빈 줄이나 별도 표 블록으로 구분합니다. 순위 사용을 끄면 지정값은 프로젝트에 남지만 PI·CAP 보고서에는 표시되지 않습니다. 상세 그래프의 그룹은 별도로 지정합니다.</p>
+<ol>
+<li><b>채널 순위 설정…</b>을 열고 채널 이름 옆 입력 칸을 한 번 클릭합니다. <code>1</code>, <code>2</code>처럼 숫자를 입력합니다. 같은 숫자는 동순위입니다. <kbd>Tab</kbd>을 누르면 다음 채널로, <kbd>Shift+Tab</kbd>을 누르면 이전 채널로 이동합니다.</li>
+<li>순위 없이 묶을 채널에는 <code>보조 전원</code>처럼 같은 구분명을 입력합니다. 빈칸은 미순위입니다. 한 채널에 입력한 값은 그 채널의 모든 사이트에 적용됩니다.</li>
+<li>보고서에 반영하려면 <b>PI·CAP 표에 순위·구분명 적용</b>을 체크하고 <b>설정 저장</b>을 누른 뒤 <b>미리보기 갱신</b>을 실행합니다. 체크를 꺼 둔 채로도 값을 입력하고 보관할 수 있습니다. 다음 작업에서 다시 쓰려면 프로젝트를 저장하세요.</li>
+</ol>
+<p>PI·CAP 표에는 숫자 순위가 낮은 채널부터 표시하고, 이어서 구분명별 채널과 미순위 채널을 표시합니다. 상세 그래프의 그룹은 별도로 지정합니다.</p>
 </section>
-<section id="capacitors">
+<section>
+<a name="capacitors"></a>
 <h2>4. CAP 용량과 활성 상태</h2>
 <p><b>3 CAP·DCR → CAP</b>에서 이름과 모델 주석의 판독값을 나란히 확인합니다. 부품이 실제로 할당받은 모델을 따라가며, 모델에 들어 있는 개별 SPICE C 소자의 값을 명목 용량으로 더하거나 대체하지 않습니다. 등가회로 내부 C 값은 제품의 명목 용량과 다를 수 있습니다.</p>
 <h3>용량 적용 순서</h3>
@@ -121,7 +163,8 @@
 </tbody></table></div>
 <p>선택한 채널의 전원–접지에 연결된 활성 CAP를 사이트·채널별로 집계합니다. 명시된 alias로 이어지는 Net도 확인하며, 같은 채널에 동일 RefDes를 중복 집계하지 않습니다. 용량 미확인은 0F로 바꾸지 않고 <b>Unknown</b> 항목으로 분리합니다.</p>
 </section>
-<section id="dcr">
+<section>
+<a name="dcr"></a>
 <h2>5. DCR 가져오기와 직접 입력</h2>
 <p>DCR 표의 표시·저장 단위는 항상 <strong>mΩ</strong>입니다. 가져올 숫자의 원래 단위를 먼저 선택합니다: <code>mΩ</code>, <code>Ω</code>, <code>µΩ</code>. 예를 들어 입력 단위 Ω에서 <code>0.003</code>을 가져오면 표에는 <code>3</code>mΩ가 됩니다. 음수, 빈 셀, 숫자가 아닌 값은 사용할 수 없습니다.</p>
 <h3>한 열을 채널에 순서대로 연결하기</h3>
@@ -142,7 +185,8 @@
 <h3>SPD·Touchstone 없이 DCR만 만들기</h3>
 <p><b>파일 읽기</b>를 생략하고 DCR의 <b>행 추가</b>로 사이트·채널·DCR(mΩ)을 직접 입력하면 됩니다. 같은 사이트·채널의 DCR은 하나만 둘 수 있습니다. 한 열 가져오기를 쓰려면 먼저 <b>채널 추가</b>로 대응할 사이트·채널을 만든 다음 위 절차를 따릅니다. <b>선택 행 삭제</b>는 선택한 DCR 행을 지웁니다.</p>
 </section>
-<section id="output">
+<section>
+<a name="output"></a>
 <h2>6. 미리보기와 Excel·PNG 저장</h2>
 <p><b>미리보기 갱신</b>은 현재 설정으로 표와 그림을 다시 만듭니다. 설정을 바꿨다면 다시 갱신하세요. 선택 목록에서 <b>그림 · …</b> 또는 <b>표 · …</b>를 고릅니다. 표 미리보기는 앞 40행·최대 40열이며, 전체 데이터는 저장한 Excel에서 확인합니다.</p>
 <p>새 입력을 읽거나 다른 프로젝트를 열면 이전 미리보기를 비웁니다. 현재 입력의 결과는 <b>미리보기 갱신</b>으로 다시 만드세요.</p>
@@ -162,7 +206,8 @@
 <p>데이터가 없는 페이지는 만들지 않으며, 아래 로그에 <b>제외 · 페이지명: 사유</b>가 표시됩니다. 부분 보고서는 정상 동작입니다. 빈 페이지를 성공한 결과처럼 채우지 않습니다. 모든 페이지에 유효한 데이터가 없으면 입력을 보완해야 합니다.</p>
 <p><b>Excel 저장…</b>으로 <code>.xlsx</code>를 저장합니다. <b>현재 그림 저장…</b>은 목록에서 선택한 그림을 PNG로 저장합니다. 표가 선택되어 있다면 먼저 그림 항목을 고르세요. PNG에는 미리보기 위젯의 화면 크기가 아니라 생성된 원본 그림이 저장됩니다.</p>
 </section>
-<section id="placement">
+<section>
+<a name="placement"></a>
 <h2>7. 배치도 읽는 방법</h2>
 <p>배치도는 <b>검정 배경</b>에 SPD의 실제 부품 좌표·회전·면과 Part 몸체 치수를 표시합니다. 선택한 Net의 활성 CAP는 용량별 색으로 채우고, 비활성 CAP와 다른 부품은 회색 계열 윤곽선으로 구분합니다. 미확인 용량은 별도 색을 사용하므로 그림의 범례를 함께 보세요. Excel 셀과 임피던스 그래프 배경은 흰색입니다.</p>
 <p>범례의 용량 옆 숫자는 <b>해당 면에 그려진 활성 CAP 수</b>입니다. 용량을 모르는 활성 CAP도 별도로 셉니다. 다른 부품·Net 항목은 수량 없이 이름만 표시합니다.</p>
@@ -175,7 +220,8 @@
 </ul>
 <p>부품과 연결된 표면 패드를 표시하는 배치도입니다. 전체 동박·배선·실크와 부품에 연결되지 않은 비아는 재현하지 않습니다. 따라서 원본 CAD 화면과 완전히 같은 그림은 아닙니다.</p>
 </section>
-<section id="calculation">
+<section>
+<a name="calculation"></a>
 <h2>8. 임피던스 계산과 보고서 단위</h2>
 <p>각 주파수에서 <b>전체 S 행렬</b>을 먼저 Z 행렬로 변환합니다. 포트 사이 결합을 포함하므로 다중 포트에서 Sii만 떼어 1포트 식을 적용하지 않습니다.</p>
 <div class="formula" role="math" aria-label="Z 행렬은 기준 저항 R 곱하기 I 빼기 S의 역행렬 곱하기 I 더하기 S">Z = R · (I − S)<sup>−1</sup> · (I + S)</div>
@@ -196,14 +242,16 @@
 <p>임피던스 표·그래프는 <b>MLO: mΩ</b>, <b>PCB: Ω</b>입니다. DCR은 보드 종류와 무관하게 mΩ입니다. 보드 종류를 바꿀 때 비교하는 숫자의 단위도 확인하세요.</p>
 <p><b>MAX</b>는 채널별 유효한 사이트 값의 최댓값, <b>AVG</b>는 그 값들의 산술평균, <b>편차</b>는 <code>(MAX − AVG) / AVG</code>입니다. 빈 사이트는 평균에서 제외하며 AVG가 0이면 편차는 공란입니다. Priority나 별도 목표값에 따른 합격·불합격 판정은 하지 않습니다.</p>
 </section>
-<section id="projects">
+<section>
+<a name="projects"></a>
 <h2>9. 프로젝트 저장과 원본 변경 확인</h2>
 <p><b>파일 → 프로젝트 저장…</b> 또는 <kbd>Ctrl</kbd>+<kbd>S</kbd>로 <code>.report.json</code>을 저장합니다. 보고서 설정, 연결·그룹·확인 상태, CAP 수정값, DCR 표, 입력 파일 경로와 서명을 보관합니다. 원본 SPD·Touchstone이나 계산 결과 전체를 프로젝트 안에 복사하지 않습니다.</p>
 <p><b>프로젝트 열기…</b>는 <kbd>Ctrl</kbd>+<kbd>O</kbd>, <b>새 프로젝트</b>는 <kbd>Ctrl</kbd>+<kbd>N</kbd>입니다. 다른 PC로 옮길 때는 입력 파일도 함께 준비하고 경로를 확인하세요.</p>
 <p>원본 서명은 <b>파일 크기와 수정 시각</b>입니다. 열 때 원본이 없거나 서명이 바뀌면 매핑을 다시 확인하도록 합니다. 읽는 중·출력 전에 변경을 발견한 경우에도 파일을 다시 읽고 연결을 확인해야 합니다. 서명은 내용 전체의 암호학적 해시는 아닙니다.</p>
 <p>다른 입력 파일로 교체하거나 변경된 원본의 프로젝트를 열면 이전 DCR 값을 비웁니다. 새 입력에 맞는 DCR을 다시 가져오세요. 가져온 DCR Excel 원본에는 보고서를 덮어쓸 수 없습니다.</p>
 </section>
-<section id="troubleshooting">
+<section>
+<a name="troubleshooting"></a>
 <h2>10. 결과가 예상과 다를 때</h2>
 <h3>사용할 단자를 확인하라는 메시지</h3>
 <p><b>2 채널·그룹</b>에서 같은 사이트·채널의 중복 후보를 검색하세요. 남길 단자를 하나 선택하고 다른 행의 사용을 해제한 뒤 확인합니다. 표시 순서나 포트 번호만으로 단자를 선택하지 마세요.</p>
@@ -217,7 +265,8 @@
 <p>대상 Excel 파일이 다른 프로그램에서 열려 있는지, 폴더에 저장할 수 있는지 확인합니다. 입력 파일을 출력 경로로 선택하지 마세요. 입력과 연결을 수정했다면 미리보기를 다시 갱신한 뒤 저장하세요.</p>
 <p class="top-link"><a href="#top">문서 처음으로 ↑</a></p>
 </section>
-<section id="validation">
+<section>
+<a name="validation"></a>
 <h2>11. 화면 입력 없이 생성하고 검증하기</h2>
 <p>저장해 둔 프로젝트로 보고서를 반복 생성할 때는 명령줄 검증 도구를 사용할 수 있습니다. <b>화면과 동일한 SPD·Touchstone 판독기, 매핑 검사, 계산식과 Excel 출력 코어</b>를 실행합니다. 마우스나 키보드 입력은 필요하지 않습니다.</p>
 <h3>설치한 프로그램에서 실행</h3>
@@ -234,6 +283,6 @@
 </section>
 </div>
 </main>
-<footer><p>SPD Report Generator v0.1.5 · Copyright © 2026 yunhyok · MIT License<br>사용한 라이브러리의 라이선스는 동봉된 <a href="THIRD_PARTY_NOTICES.txt">THIRD_PARTY_NOTICES.txt</a>를 참고하세요.</p></footer>
+<footer><p>SPD Report Generator v0.1.6 · Copyright © 2026 yunhyok · MIT License<br>사용한 라이브러리의 라이선스는 동봉된 <a href="THIRD_PARTY_NOTICES.txt">THIRD_PARTY_NOTICES.txt</a>를 참고하세요.</p></footer>
 </body>
 </html>

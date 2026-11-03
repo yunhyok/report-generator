@@ -47,7 +47,7 @@ Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 
 [Icons]
 Name: "{autoprograms}\{#AppName}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
-Name: "{autoprograms}\{#AppName}\Help"; Filename: "{app}\help.html"
+Name: "{autoprograms}\{#AppName}\Help"; Filename: "{app}\{#AppExe}"; Parameters: "--show-help"; WorkingDir: "{app}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]

@@ -12,6 +12,13 @@ def test_installer_uses_program_files_and_shows_destination_page():
     assert "PrivilegesRequired=admin" in installer
 
 
+def test_start_menu_help_opens_the_bundled_viewer():
+    installer = (build_release.ROOT / "packaging/installer.iss").read_text(encoding="utf-8")
+    shortcut = next(line for line in installer.splitlines() if r'{#AppName}\Help"' in line)
+    assert r'Filename: "{app}\{#AppExe}"' in shortcut
+    assert 'Parameters: "--show-help"' in shortcut
+
+
 def test_release_version_is_synchronized():
     import tomllib
 

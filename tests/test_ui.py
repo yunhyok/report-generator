@@ -282,7 +282,7 @@ def test_optional_priority_propagates_per_channel_without_changing_mappings_or_d
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-def test_priority_skip_or_cancel_preserves_existing_drafts(window, monkeypatch, cancel):
+def test_priority_cancel_preserves_drafts_and_disabled_save_keeps_edits(window, monkeypatch, cancel):
     window.config.settings.use_priority = True
     window.config.mappings = [ChannelMapping(site="SITE0", channel="RAIL", priority="0"),
                               ChannelMapping(site="SITE1", channel="RAIL", priority="2")]
@@ -301,7 +301,109 @@ def test_priority_skip_or_cancel_preserves_existing_drafts(window, monkeypatch, 
     monkeypatch.setattr(PriorityDialog, "exec", skip)
     window.edit_priorities()
     assert window.config.settings.use_priority == cancel
-    assert [window.mapping_table.item(row, 10).text() for row in range(2)] == ["0", "2"]
+    assert [window.mapping_table.item(row, 10).text() for row in range(2)] == (["0", "2"] if cancel else ["8", "8"])
+
+
+def test_disabled_priority_accept_unchanged_preserves_legacy_drafts(window, monkeypatch):
+    window.config.mappings = [ChannelMapping(site="SITE0", channel="RAIL_A", priority="01"),
+                              ChannelMapping(site="SITE1", channel="rail_a", priority="2"),
+                              ChannelMapping(site="SITE0", channel="RAIL_B", priority="-1")]
+    window.fill_mappings()
+    seed_preview(window)
+
+    def unchanged(dialog):
+        assert dialog.table.isEnabled()
+        assert dialog.clear_button.isEnabled()
+        assert not dialog.enabled.isChecked()
+        dialog.accept()
+        assert dialog.priorities == {}
+        return dialog.result()
+
+    monkeypatch.setattr(PriorityDialog, "exec", unchanged)
+    window.edit_priorities()
+    assert not window.config.settings.use_priority
+    assert [window.mapping_table.item(row, 10).text() for row in range(3)] == ["01", "2", "-1"]
+    assert window.preview_book == "old-preview.xlsx"
+
+
+def test_priority_single_click_and_keyboard_entry_without_enabling_application(window, app, monkeypatch):
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QDialogButtonBox, QLineEdit
+
+    window.config.mappings = [ChannelMapping(site="SITE0", channel="RAIL_A", priority="0"),
+                              ChannelMapping(site="SITE1", channel="rail_a", priority="2", selected=False),
+                              ChannelMapping(site="SITE0", channel="RAIL_B"),
+                              ChannelMapping(site="SITE0", channel="RAIL_C", priority="-1")]
+    window.fill_mappings()
+    seed_preview(window)
+
+    def enter(dialog):
+        dialog.show()
+        app.processEvents()
+        rect = dialog.table.visualItemRect(dialog.table.item(0, 1))
+        QTest.mouseClick(dialog.table.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
+        app.processEvents()
+        editor = next((editor for editor in dialog.table.findChildren(QLineEdit) if editor.isVisible()), None)
+        assert editor is not None and editor.isVisible()
+        QTest.keyClicks(editor, "3")
+        QTest.keyClick(editor, Qt.Key.Key_Tab)
+        app.processEvents()
+        assert dialog.table.currentRow() == 1
+        assert dialog.table.currentColumn() == 1
+        editor = next((editor for editor in dialog.table.findChildren(QLineEdit) if editor.isVisible()), None)
+        assert editor is not None and editor.isVisible()
+        QTest.keyClicks(editor, "5")
+        buttons = dialog.findChild(QDialogButtonBox)
+        QTest.mouseClick(buttons.button(QDialogButtonBox.StandardButton.Ok), Qt.MouseButton.LeftButton)
+        assert dialog.result() == QDialog.DialogCode.Accepted
+        assert not dialog.enabled.isChecked()
+        return dialog.result()
+
+    monkeypatch.setattr(PriorityDialog, "exec", enter)
+    window.edit_priorities()
+    assert not window.config.settings.use_priority
+    assert [window.mapping_table.item(row, 10).text() for row in range(4)] == ["3", "3", "5", "-1"]
+    assert window.preview_book is None
+    assert "초안" in window.status.text()
+
+
+def test_disabled_priority_validates_only_edited_rows(app):
+    dialog = PriorityDialog({"RAIL_A": ["1", "2"], "RAIL_B": ["-1"], "RAIL_C": [""]}, False)
+    dialog.table.item(2, 1).setText("0")
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Rejected
+    assert "RAIL_C" in dialog.error_label.text()
+    dialog.table.item(2, 1).setText("보조 전원")
+    dialog.accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert dialog.priorities == {"RAIL_C": "보조 전원"}
+    dialog.deleteLater()
+
+
+def test_priority_tab_skips_readonly_cells_and_reaches_footer(app):
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QLineEdit
+
+    dialog = PriorityDialog({"RAIL_A": [""], "RAIL_B": [""]}, False)
+    dialog.show()
+    app.processEvents()
+    QTest.mouseClick(dialog.table.viewport(), Qt.MouseButton.LeftButton,
+                     pos=dialog.table.visualItemRect(dialog.table.item(0, 1)).center())
+    app.processEvents()
+
+    def tab(key):
+        editor = next(editor for editor in dialog.table.findChildren(QLineEdit) if editor.isVisible())
+        QTest.keyClick(editor, key)
+        app.processEvents()
+
+    tab(Qt.Key.Key_Tab)
+    assert dialog.table.currentRow() == 1
+    tab(Qt.Key.Key_Backtab)
+    assert dialog.table.currentRow() == 0
+    tab(Qt.Key.Key_Tab)
+    tab(Qt.Key.Key_Tab)
+    assert dialog.clear_button.hasFocus()
+    dialog.reject()
 
 
 def test_priority_dialog_repairs_conflicts_invalid_numbers_and_named_sections(app):
@@ -410,4 +512,9 @@ def test_priority_entry_and_dialog_fit_small_window(window, app):
     assert dialog.table.height() >= 70
     assert dialog.table.verticalScrollBar().maximum() > 0
     assert dialog.table.geometry().bottom() < dialog.clear_button.geometry().top()
+    assert not dialog.table.wordWrap()
+    assert dialog.table.columnWidth(2) < dialog.table.columnWidth(1)
+    assert dialog.table.item(0, 0).toolTip() == "RAIL_0"
+    assert dialog.table.item(0, 2).text() == "미입력"
+    assert dialog.table.item(0, 1).background() != dialog.table.item(0, 0).background()
     dialog.reject()

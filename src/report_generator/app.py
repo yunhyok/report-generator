@@ -19,12 +19,16 @@ def main():
         return run(sys.argv[2])
     from PySide6.QtWidgets import QApplication
     from PySide6.QtGui import QFont
-    from report_generator.ui.window import MainWindow
     app = QApplication(sys.argv)
     app.setApplicationName("SPD Report Generator")
     app.setOrganizationName("SPD Report Generator")
     app.setFont(QFont("Malgun Gothic", 10))
-    window = MainWindow()
+    if "--show-help" in sys.argv[1:]:
+        from report_generator.ui.help import HelpWindow
+        window = HelpWindow()
+    else:
+        from report_generator.ui.window import MainWindow
+        window = MainWindow()
     window.show()
     return app.exec()
 

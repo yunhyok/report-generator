@@ -7,8 +7,8 @@ import tempfile
 from dataclasses import asdict, replace
 from pathlib import Path
 
-from PySide6.QtCore import QSignalBlocker, Qt, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QIcon, QKeySequence, QPixmap
+from PySide6.QtCore import QModelIndex, QSignalBlocker, Qt
+from PySide6.QtGui import QAction, QIcon, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
@@ -23,6 +23,7 @@ from ..core.mapping import priority_value
 from ..core.models import ChannelMapping, DcrRow, ReportConfig, ReportSettings
 from ..core.project import load_project, save_project, validate_config
 from ..jobs import JobRunner
+from .help import HelpWindow
 from .theme import apply_theme, section_title
 
 
@@ -40,8 +41,8 @@ def check_item(value):
     return item
 
 
-def make_table(headers):
-    table = QTableWidget(0, len(headers))
+def make_table(headers, table_class=QTableWidget):
+    table = table_class(0, len(headers))
     table.setHorizontalHeaderLabels(headers)
     table.setAlternatingRowColors(True)
     table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -58,6 +59,18 @@ def button(label, callback, primary=False):
     return control
 
 
+class PriorityTable(QTableWidget):
+    def moveCursor(self, action, modifiers):
+        if action in (self.CursorAction.MoveNext, self.CursorAction.MovePrevious):
+            forward = action == self.CursorAction.MoveNext
+            row = self.currentRow() + (1 if forward else -1)
+            if 0 <= row < self.rowCount():
+                return self.model().index(row, 1)
+            QWidget.focusNextPrevChild(self, forward)
+            return QModelIndex()
+        return super().moveCursor(action, modifiers)
+
+
 class PriorityDialog(QDialog):
     def __init__(self, priorities: dict[str, list[str]], enabled: bool, parent=None):
         super().__init__(parent)
@@ -66,17 +79,31 @@ class PriorityDialog(QDialog):
         self.resize(min(660, available.width() - 40), min(480, available.height() - 80))
         self.setMinimumSize(380, 280)
         self.priorities = {}
+        self.edited_rows = set()
         layout = QVBoxLayout(self)
-        self.enabled = QCheckBox("PI·CAP 표에 채널 우선순위 사용")
+        self.enabled = QCheckBox("PI·CAP 표에 순위·구분명 적용")
         self.enabled.setChecked(enabled)
-        layout.addWidget(self.enabled)
-        note = QLabel("순위는 1, 2처럼 입력합니다. 같은 순위도 가능합니다. 구분명 예: 보조 전원. 빈칸은 미순위입니다. 그래프 그룹과 무관하며, 같은 채널의 모든 사이트에 적용합니다.")
+        self.enabled.setStyleSheet("""
+            QCheckBox::indicator:unchecked {
+                border: 1px solid #a4aebb; background: #1d2025;
+                border-radius: 2px; width: 14px; height: 14px;
+            }
+            QCheckBox::indicator:unchecked:focus { border-color: #8fc1ff; }
+        """)
+        note = QLabel("입력 칸을 클릭하세요. 숫자(1, 2)는 순위, 이름(보조 전원)은 구분입니다. 같은 순위도 가능하며 빈칸은 미순위입니다. Tab / Shift+Tab으로 다음 / 이전 채널에 입력합니다.")
         note.setWordWrap(True)
         layout.addWidget(note)
-        self.table = make_table(["사용 채널", "순위 또는 구분명", "기존 값 확인"])
+        self.table = make_table(["사용 채널", "순위·구분명 입력", "기존 값 확인"], PriorityTable)
+        self.table.setWordWrap(False)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.EditKeyPressed | QTableWidget.EditTrigger.AnyKeyPressed)
+        self.table.cellClicked.connect(self.edit_rank_cell)
         self.table.setRowCount(len(priorities))
-        self.table.setColumnWidth(0, 190)
-        self.table.setColumnWidth(1, 150)
+        self.table.horizontalHeader().setStretchLastSection(False)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setMinimumSectionSize(100)
+        self.table.setColumnWidth(1, 170)
         for row, (channel, raw_values) in enumerate(priorities.items()):
             raw_values = list(dict.fromkeys(raw_values))
             normalized = []
@@ -89,49 +116,55 @@ class PriorityDialog(QDialog):
                     normalized.append(value)
                     invalid = True
             conflict = len(set(normalized)) > 1
-            self.table.setItem(row, 0, text_item(channel, False))
+            channel_item = text_item(channel, False)
+            channel_item.setToolTip(channel)
+            self.table.setItem(row, 0, channel_item)
             item = text_item("" if conflict else normalized[0])
+            item.setBackground(self.palette().button())
             item.setData(Qt.ItemDataRole.UserRole, conflict)
             self.table.setItem(row, 1, item)
             evidence = " / ".join(value or "(빈칸)" for value in raw_values)
-            state = text_item("사이트별 값 다름" if conflict else "수정 필요" if invalid else "기존 입력값", False)
+            state = text_item("사이트별 값 다름" if conflict else "수정 필요" if invalid else "미입력" if not item.text() else "기존 입력값", False)
             state.setToolTip(evidence)
             item.setToolTip(evidence if conflict else "양의 정수 · 구분명 · 빈칸 중 하나")
             self.table.setItem(row, 2, state)
         self.table.itemChanged.connect(self.rank_edited)
-        self.table.setEnabled(enabled)
         layout.addWidget(self.table, 1)
         self.clear_button = button("선택 채널 비우기", self.clear_selected)
-        self.clear_button.setEnabled(enabled)
         layout.addWidget(self.clear_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.error_label = QLabel()
         self.error_label.setWordWrap(True)
         self.error_label.setStyleSheet("color: #8fc1ff;")
         layout.addWidget(self.error_label)
-        preservation = QLabel("사용을 끄면 기존 순위·구분명은 그대로 보관하며 PI·CAP 표에 적용하지 않습니다.")
+        preservation = QLabel("같은 채널의 모든 사이트에 저장합니다. 그래프 그룹과는 별도입니다. 아래 체크를 꺼도 입력값은 초안으로 저장합니다.")
         preservation.setWordWrap(True)
         preservation.setProperty("muted", True)
         layout.addWidget(preservation)
+        layout.addWidget(self.enabled)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("적용")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("설정 저장")
         buttons.button(QDialogButtonBox.StandardButton.Ok).setProperty("primary", True)
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("취소")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-        self.enabled.toggled.connect(self.table.setEnabled)
-        self.enabled.toggled.connect(self.clear_button.setEnabled)
         self.enabled.toggled.connect(lambda _: self.error_label.clear())
+
+    def edit_rank_cell(self, row, column):
+        if column == 1:
+            self.table.editItem(self.table.item(row, column))
 
     def rank_edited(self, item):
         if item.column() == 1:
+            self.edited_rows.add(item.row())
             with QSignalBlocker(self.table):
                 item.setData(Qt.ItemDataRole.UserRole, False)
                 self.table.item(item.row(), 2).setText("입력 수정됨")
             self.error_label.clear()
 
     def clear_selected(self):
-        for row in {index.row() for index in self.table.selectionModel().selectedRows()}:
+        for row in {index.row() for index in self.table.selectionModel().selectedIndexes()}:
+            self.edited_rows.add(row)
             with QSignalBlocker(self.table):
                 item = self.table.item(row, 1)
                 item.setText("")
@@ -140,25 +173,25 @@ class PriorityDialog(QDialog):
         self.error_label.clear()
 
     def accept(self):
-        if self.enabled.isChecked():
-            if not self.table.rowCount():
-                self.error_label.setText("사용할 채널을 먼저 선택하세요. 우선순위 없이 진행하려면 사용을 끄세요.")
+        if self.enabled.isChecked() and not self.table.rowCount():
+            self.error_label.setText("사용할 채널을 먼저 선택하세요. 우선순위 없이 진행하려면 사용을 끄세요.")
+            return
+        priorities = {}
+        rows = range(self.table.rowCount()) if self.enabled.isChecked() else sorted(self.edited_rows)
+        for row in rows:
+            item = self.table.item(row, 1)
+            channel = self.table.item(row, 0).text()
+            try:
+                if item.data(Qt.ItemDataRole.UserRole):
+                    raise ValueError("사이트별 값이 다릅니다. 하나를 입력하거나 선택 채널 비우기를 누르세요.")
+                value = priority_value(item.text())
+                priorities[channel] = "" if value is None else str(value)
+            except ValueError as exc:
+                self.error_label.setText(f"{channel}: {exc}")
+                self.table.setCurrentCell(row, 1)
+                self.table.scrollToItem(item)
                 return
-            priorities = {}
-            for row in range(self.table.rowCount()):
-                item = self.table.item(row, 1)
-                channel = self.table.item(row, 0).text()
-                try:
-                    if item.data(Qt.ItemDataRole.UserRole):
-                        raise ValueError("사이트별 값이 다릅니다. 하나를 입력하거나 선택 채널 비우기를 누르세요.")
-                    value = priority_value(item.text())
-                    priorities[channel] = "" if value is None else str(value)
-                except ValueError as exc:
-                    self.error_label.setText(f"{channel}: {exc}")
-                    self.table.setCurrentCell(row, 1)
-                    self.table.scrollToItem(item)
-                    return
-            self.priorities = priorities
+        self.priorities = priorities
         super().accept()
 
 
@@ -455,7 +488,7 @@ class MainWindow(QMainWindow):
         self.update_priority_status()
 
     def update_priority_status(self):
-        self.priority_status.setText("PI·CAP 우선순위 사용 중 · 그래프 그룹과 별도" if self.config.settings.use_priority else "PI·CAP 우선순위 사용 안 함 · 기존 입력값 보관")
+        self.priority_status.setText("PI·CAP 우선순위 사용 중 · 그래프 그룹과 별도" if self.config.settings.use_priority else "PI·CAP 우선순위 사용 안 함 · 입력값은 초안으로 보관")
 
     def edit_priorities(self):
         channels = {}
@@ -471,20 +504,23 @@ class MainWindow(QMainWindow):
         dialog = PriorityDialog(priorities, self.config.settings.use_priority, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        changed = self.config.settings.use_priority != dialog.enabled.isChecked()
+        was_enabled = self.config.settings.use_priority
+        changed = was_enabled != dialog.enabled.isChecked()
         self.config.settings.use_priority = dialog.enabled.isChecked()
-        if self.config.settings.use_priority:
-            by_channel = {channel.casefold(): rank for channel, rank in dialog.priorities.items()}
-            with QSignalBlocker(self.mapping_table):
-                for row in range(self.mapping_table.rowCount()):
-                    channel = self.mapping_table.item(row, 8).text().strip().casefold()
-                    if channel in by_channel:
-                        changed |= self.mapping_table.item(row, 10).text() != by_channel[channel]
-                        self.mapping_table.item(row, 10).setText(by_channel[channel])
+        by_channel = {channel.casefold(): rank for channel, rank in dialog.priorities.items()}
+        with QSignalBlocker(self.mapping_table):
+            for row in range(self.mapping_table.rowCount()):
+                channel = self.mapping_table.item(row, 8).text().strip().casefold()
+                if channel in by_channel:
+                    changed |= self.mapping_table.item(row, 10).text() != by_channel[channel]
+                    self.mapping_table.item(row, 10).setText(by_channel[channel])
         self.update_priority_status()
         if changed:
             self.clear_preview()
-            self.status.setText("채널 우선순위 설정을 저장했습니다. 미리보기를 갱신하세요.")
+            if was_enabled or self.config.settings.use_priority:
+                self.status.setText("채널 우선순위 설정을 저장했습니다. 미리보기를 갱신하세요.")
+            else:
+                self.status.setText("채널 우선순위 초안을 저장했습니다. PI·CAP에는 미적용입니다. 미리보기를 갱신하세요.")
 
     def mapping_edited(self, item):
         if self.loading_table:
@@ -921,9 +957,13 @@ class MainWindow(QMainWindow):
         self.saved_state = self.state_text()
 
     def open_help(self):
-        path = Path(__file__).resolve().parents[1] / "docs" / "help.html"
-        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
-            self.error(f"설명서를 열 수 없습니다: {path}")
+        if not hasattr(self, "help_window"):
+            self.help_window = HelpWindow(self)
+        if self.help_window.isMinimized():
+            self.help_window.showNormal()
+        self.help_window.show()
+        self.help_window.raise_()
+        self.help_window.activateWindow()
 
     def closeEvent(self, event):
         if self.runner.busy:
