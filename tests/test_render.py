@@ -138,6 +138,46 @@ def test_group_plot_selected_ports_units_and_gaps(tmp_path, monkeypatch):
     assert captured["markers"] == ["None"]
 
 
+@pytest.mark.parametrize("board_type,width,factor,unit", [("MLO", None, 1000, "mΩ"), ("PCB", 2.5, 1, "Ω")])
+@pytest.mark.parametrize("count,channel_count", [(4, 1), (4, 2), (14, 1), (14, 2)])
+def test_group_plot_solid_width_and_distinct_site_channel_colors(
+        tmp_path, monkeypatch, board_type, width, factor, unit, count, channel_count):
+    config = ReportConfig(mappings=[
+        ChannelMapping(index + 1, channel=f"RAIL{index % channel_count}",
+                       site=f"SITE{index // channel_count}", group="G", display_name=f"Name{index}")
+        for index in range(count)
+    ])
+    config.settings.board_type = board_type
+    if width is not None:
+        config.settings.plot_line_width_pt = width
+    values = np.tile([[1], [np.nan], [3]], (1, count)).astype(complex)
+    ts = TouchstoneData("synthetic", {}, [Port(i + 1, f"P{i + 1}") for i in range(count)],
+                       np.array([1e3, 1e6, 1e9]), values)
+
+    def capture(figure, path):
+        ax = figure.axes[0]
+        assert len(ax.lines) == count
+        assert all(line.get_linestyle() == "-" for line in ax.lines)
+        assert all(line.get_linewidth() == (1.0 if width is None else width) for line in ax.lines)
+        colors = [line.get_color() for line in ax.lines]
+        assert len(set(colors)) == count
+        if count <= len(render.COLORS):
+            assert colors == render.COLORS[:count]
+        assert ax.get_ylabel() == f"|Zii| [{unit}]"
+        assert [text.get_text() for text in ax.get_legend().get_texts()] == [
+            line.get_label() for line in ax.lines]
+        for line, mapping in zip(ax.lines, config.mappings):
+            frequency, magnitude = plot_impedance(ts, mapping.port_index)
+            np.testing.assert_array_equal(line.get_xdata(), frequency / 1e6)
+            np.testing.assert_array_equal(line.get_ydata(), magnitude * factor)
+            assert np.isnan(line.get_ydata()[frequency == 1e6]).all()
+            assert line.get_label() == f"{mapping.display_name} ({mapping.channel}) / {mapping.site}"
+        return str(path)
+
+    monkeypatch.setattr(render, "_finish", capture)
+    render.render_group_plot(ts, config, "G", tmp_path / "solid-lines.png")
+
+
 def test_display_sampling_keeps_raw_extrema_boundaries_and_minimum_log_density():
     ts = TouchstoneData("synthetic", {}, [Port(1, "P1")],
                        np.array([0., 1e4, 1.23e6, 1.24e6, 4e9]),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from colorsys import hsv_to_rgb
 from math import cos, radians, sin
 from pathlib import Path
 
@@ -76,25 +77,21 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
     if not mappings:
         raise ValueError("그룹에 선택한 Touchstone 포트가 없습니다.")
     title, show_names = group_presentation(group, mappings)
-    channels = list(dict.fromkeys(m.channel for m in mappings))
-    sites = list(dict.fromkeys(m.site for m in mappings))
     fig = Figure(figsize=(12, 5.4), dpi=110, facecolor="white")
     ax = fig.add_subplot(111, facecolor="white")
     unit = "Ω" if config.settings.board_type.upper() == "PCB" else "mΩ"
     factor = 1 if unit == "Ω" else 1000
     plotted = 0
-    for m in mappings:
+    for index, m in enumerate(mappings):
         if not 1 <= m.port_index <= len(ts.ports):
             raise ValueError(f"Touchstone 포트 범위 오류: {m.port_index}")
         frequency, magnitude = plot_impedance(ts, m.port_index)
         if not np.isfinite(magnitude).any():
             continue
-        site_index = sites.index(m.site)
-        color_index = site_index if len(channels) == 1 else channels.index(m.channel)
-        style_index = site_index // len(COLORS) if len(channels) == 1 else site_index
-        style = "solid" if style_index == 0 else (0, (1 + style_index // 4, 1 + style_index % 4))
-        ax.plot(frequency / 1e6, magnitude * factor, color=COLORS[color_index % len(COLORS)],
-                linestyle=style, linewidth=.85,
+        # Beyond the fixed palette, golden-ratio hue steps keep adjacent curves distinct.
+        color = COLORS[index] if len(mappings) <= len(COLORS) else hsv_to_rgb(index * .61803398875 % 1, .72, .60)
+        ax.plot(frequency / 1e6, magnitude * factor, color=color,
+                linestyle="solid", linewidth=config.settings.plot_line_width_pt,
                 label=f"{m.display_name.strip()} ({m.channel}) / {m.site}"
                 if m.display_name.strip() else f"{m.channel} / {m.site}")
         plotted += 1

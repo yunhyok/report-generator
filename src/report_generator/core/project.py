@@ -11,6 +11,9 @@ from .models import ChannelMapping, DcrRow, ReportConfig, ReportSettings, source
 
 
 def validate_config(config: ReportConfig) -> None:
+    width = config.settings.plot_line_width_pt
+    if type(width) not in (int, float) or not 1 <= width <= 5:
+        raise ValueError("그래프 선 굵기는 1~5 pt 사이의 숫자로 입력하세요.")
     if not isinstance(config.settings.use_priority, bool):
         raise ValueError("채널 순위 사용 여부를 확인하세요.")
     if not isinstance(config.dcr_source_path, str):

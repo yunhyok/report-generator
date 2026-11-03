@@ -142,6 +142,7 @@ class ReportSettings:
     bottom_mirror: bool = True
     ground_nets: list[str] = field(default_factory=lambda: ["GND", "DGND"])
     use_priority: bool = False
+    plot_line_width_pt: float = 1.0
 
 
 @dataclass

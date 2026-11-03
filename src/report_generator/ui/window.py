@@ -10,7 +10,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QModelIndex, QSignalBlocker, Qt
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog,
     QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
     QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
     QScrollArea, QSizePolicy, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
@@ -292,9 +292,23 @@ class MainWindow(QMainWindow):
         self.date_input = QLineEdit(self.config.settings.report_date)
         self.revision_input = QLineEdit()
         self.ground_input = QLineEdit("GND, DGND")
+        self.plot_line_width = QDoubleSpinBox()
+        self.plot_line_width.setRange(1.0, 5.0)
+        self.plot_line_width.setDecimals(1)
+        self.plot_line_width.setSingleStep(0.5)
+        self.plot_line_width.setSuffix(" pt")
+        self.plot_line_width.setValue(self.config.settings.plot_line_width_pt)
+        self.plot_line_width.setAccessibleName("그래프 선 굵기")
+        self.plot_line_width.setToolTip("임피던스 데이터 그래프의 선 굵기")
+        self.plot_line_width.valueChanged.connect(self.clear_preview)
         self.mirror = QCheckBox("Bottom을 하면에서 본 방향으로 좌우 반전")
         self.mirror.setChecked(True)
-        for label, widget in (("제목", self.title_input), ("제품명", self.product_input), ("보드 종류", self.board_type), ("작성일", self.date_input), ("Revision", self.revision_input), ("접지 Net (쉼표 구분)", self.ground_input), ("Bottom 방향", self.mirror)):
+        for label, widget in (
+            ("제목", self.title_input), ("제품명", self.product_input),
+            ("보드 종류", self.board_type), ("그래프 선 굵기", self.plot_line_width),
+            ("작성일", self.date_input), ("Revision", self.revision_input),
+            ("접지 Net (쉼표 구분)", self.ground_input), ("Bottom 방향", self.mirror),
+        ):
             form.addRow(label, widget)
         layout.addLayout(form)
         self.input_summary = QLabel("파일 읽기 → 채널·그룹 확인 → (선택) 채널 순위 설정 → 미리보기·Excel 저장. 파일 없이 DCR만 입력할 때는 채널을 추가하세요.")
@@ -503,8 +517,15 @@ class MainWindow(QMainWindow):
         return rows
 
     def collect_config(self, *, dcr=None):
+        self.plot_line_width.interpretText()
         config = self.config if dcr is None else replace(self.config, dcr=dcr)
-        config.settings = ReportSettings(self.title_input.text().strip(), self.product_input.text().strip(), self.board_type.currentText(), self.date_input.text().strip(), self.revision_input.text().strip(), self.mirror.isChecked(), [n.strip() for n in self.ground_input.text().split(",") if n.strip()], use_priority=self.config.settings.use_priority)
+        config.settings = ReportSettings(
+            title=self.title_input.text().strip(), product=self.product_input.text().strip(),
+            board_type=self.board_type.currentText(), report_date=self.date_input.text().strip(),
+            revision=self.revision_input.text().strip(), bottom_mirror=self.mirror.isChecked(),
+            ground_nets=[n.strip() for n in self.ground_input.text().split(",") if n.strip()],
+            use_priority=self.config.settings.use_priority, plot_line_width_pt=self.plot_line_width.value(),
+        )
         config.mappings = self.collect_mappings()
         if dcr is None:
             config.dcr = []
@@ -977,6 +998,7 @@ class MainWindow(QMainWindow):
         self.date_input.setText(settings.report_date)
         self.revision_input.setText(settings.revision)
         self.ground_input.setText(", ".join(settings.ground_nets))
+        self.plot_line_width.setValue(settings.plot_line_width_pt)
         self.mirror.setChecked(settings.bottom_mirror)
         self.update_priority_status()
 

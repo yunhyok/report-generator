@@ -945,3 +945,24 @@ def test_report_display_name_roundtrips_through_gui_project_save_open(window, mo
     assert window.mapping_table.item(0, 12).text() == "Report name"
     mapping = window.collect_config().mappings[0]
     assert (mapping.net, mapping.channel, mapping.site, mapping.display_name) == ("PHYSICAL", "CHANNEL", "SITE0", "Report name")
+
+
+def test_impedance_line_width_control_invalidates_preview_and_roundtrips(window, monkeypatch, tmp_path):
+    control = window.plot_line_width
+    assert control.accessibleName() == "그래프 선 굵기"
+    assert (control.minimum(), control.maximum(), control.decimals(), control.singleStep(), control.suffix()) == (1.0, 5.0, 1, 0.5, " pt")
+    control.lineEdit().setText("2.5")
+    assert window.collect_config().settings.plot_line_width_pt == 2.5
+    seed_preview(window)
+    control.setValue(3.0)
+    assert_preview_empty(window)
+    control.setValue(2.5)
+
+    path = tmp_path / "line-width.report.json"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **kw: (str(path), ""))
+    assert window.save_project()
+    window.new_project()
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: (str(path), ""))
+    window.open_project()
+    assert window.plot_line_width.value() == 2.5
+    assert window.collect_config().settings.plot_line_width_pt == 2.5

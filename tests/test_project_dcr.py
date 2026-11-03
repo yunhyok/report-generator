@@ -13,6 +13,7 @@ def test_project_roundtrip_and_changed_source(tmp_path):
     config = ReportConfig(mappings=[ChannelMapping(site="SITE0", channel="VDD", net="SPD_VDD_0",
                                                   display_name="VDD_CORE")], dcr=[DcrRow("SITE0", "VDD", 0)])
     project = tmp_path / "test.report.json"
+    config.settings.plot_line_width_pt = 3.5
     save_project(project, config, {"spd": str(source)}, {"spd": source_signature(source)})
     restored, _, _, changed = load_project(project)
     assert restored == config and not changed
@@ -28,10 +29,12 @@ def test_existing_projects_keep_ranks_but_explicitly_disabled_ranks_stay_off(tmp
     assert not load_project(path)[0].settings.use_priority
     legacy = json.loads(path.read_text(encoding="utf-8"))
     del legacy["config"]["settings"]["use_priority"]
+    del legacy["config"]["settings"]["plot_line_width_pt"]
     del legacy["config"]["channel_settings_source_path"]
     del legacy["config"]["mappings"][0]["display_name"]
     path.write_text(json.dumps(legacy), encoding="utf-8")
     restored = load_project(path)[0]
+    assert restored.settings.plot_line_width_pt == 1.0
     assert restored.mappings[0].display_name == ""
     assert restored.settings.use_priority and restored.mappings[0].priority == "2"
     legacy["config"]["mappings"][0]["priority"] = ""
@@ -40,6 +43,17 @@ def test_existing_projects_keep_ranks_but_explicitly_disabled_ranks_stay_off(tmp
     legacy["config"]["settings"]["use_priority"] = "false"
     path.write_text(json.dumps(legacy), encoding="utf-8")
     with pytest.raises(ValueError, match="사용 여부"):
+        load_project(path)
+
+
+@pytest.mark.parametrize("width", [0.9, 5.1, "2", True, None, float("nan"), float("inf")])
+def test_project_rejects_invalid_plot_width(tmp_path, width):
+    path = tmp_path / "width.report.json"
+    save_project(path, ReportConfig(), {})
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["config"]["settings"]["plot_line_width_pt"] = width
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="그래프 선 굵기"):
         load_project(path)
 
 

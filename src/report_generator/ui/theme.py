@@ -51,15 +51,15 @@ def apply_theme(window: QWidget) -> None:
         QLabel[sectionTitle="true"] { color: #b9c7d9; font-size: 11px; font-weight: 600; }
         QLabel[muted="true"] { color: #b9c1cc; }
         QLabel#component_name { font-size: 15px; font-weight: 600; }
-        QLineEdit, QComboBox, QAbstractItemView, QPlainTextEdit {
+        QLineEdit, QComboBox, QDoubleSpinBox, QAbstractItemView, QPlainTextEdit {
             background: #1d2025; color: #eceef1; border: 1px solid #626c7a;
             border-radius: 3px; selection-background-color: #345d8c; selection-color: white;
         }
-        QLineEdit, QComboBox { padding: 4px 6px; min-height: 16px; }
-        QLineEdit:focus, QComboBox:focus, QAbstractItemView:focus, QPlainTextEdit:focus {
+        QLineEdit, QComboBox, QDoubleSpinBox { padding: 4px 6px; min-height: 16px; }
+        QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus, QAbstractItemView:focus, QPlainTextEdit:focus {
             border: 1px solid #8fc1ff;
         }
-        QLineEdit:disabled, QComboBox:disabled, QAbstractItemView:disabled {
+        QLineEdit:disabled, QComboBox:disabled, QDoubleSpinBox:disabled, QAbstractItemView:disabled {
             color: #929ba8; background: #292d33; border-color: #444b55;
         }
         QComboBox QAbstractItemView { background: #292d33; selection-background-color: #345d8c; }
