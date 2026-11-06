@@ -206,6 +206,7 @@ def test_dcr_matrix_site_specific_display_names_roundtrip(tmp_path):
 
 def test_dcr_excel_cached_formula_value_and_error(tmp_path):
     from openpyxl import Workbook
+    from xml.etree import ElementTree
     from zipfile import ZipFile
     book = Workbook()
     book.active.append(["Site", "Channel", "DCR"])
@@ -214,7 +215,10 @@ def test_dcr_excel_cached_formula_value_and_error(tmp_path):
     book.save(path)
     with ZipFile(path) as source:
         files = {name: source.read(name) for name in source.namelist()}
-    files["xl/worksheets/sheet1.xml"] = files["xl/worksheets/sheet1.xml"].replace(b"<f>1+1</f><v></v>", b"<f>1+1</f><v>2</v>")
+    sheet_xml = "xl/worksheets/sheet1.xml"
+    sheet = ElementTree.fromstring(files[sheet_xml])
+    sheet.find(".//{*}c[@r='C2']/{*}v").text = "2"
+    files[sheet_xml] = ElementTree.tostring(sheet, encoding="utf-8")
     with ZipFile(path, "w") as output:
         for name, data in files.items():
             output.writestr(name, data)
