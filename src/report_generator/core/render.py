@@ -147,7 +147,7 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
     fallback_bounds = []
     seen_pads = set()
     bounds = []
-    inactive = unknown = missing_size = context = 0
+    inactive = unknown = missing_size = 0
     for c in components:
         selected_cap = highlighted(c)
         active = selected_cap and component_active(c, spd)
@@ -155,7 +155,6 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
         color = palette.get(value, "#cf6bcc") if active else "#777777" if selected_cap else "#b8b8b8"
         kind = "active" if active else "inactive" if selected_cap else "context"
         inactive += selected_cap and not active
-        context += not selected_cap
         unknown += active and value is None
         x, y = c.x_mm, c.y_mm
         valid_position = c.side.capitalize() == side and x is not None and y is not None and np.isfinite(x) and np.isfinite(y)
@@ -272,8 +271,6 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
         handles.append(Line2D([], [], color="#cf6bcc", marker="s", linestyle="none", label=f"Unknown capacitance ({unknown})"))
     if missing_size:
         handles.append(Line2D([], [], color="#eeeeee", marker="x", linestyle="none", label=f"Unknown dimensions ({missing_size})"))
-    if context:
-        handles.append(Line2D([], [], color="#b8b8b8", marker="s", markerfacecolor="none", linestyle="none", label="Other components / nets"))
     if fallback_bounds:
         handles.append(Line2D([], [], color="#999999", linestyle="dashed", label=f"Pin bounds ({len(fallback_bounds)})"))
     if handles:

@@ -296,7 +296,7 @@ def test_cad_placement_context_is_outline_and_cap_colors_follow_reference(tmp_pa
     filled = np.concatenate([colors for colors in captured["faces"] if len(colors)])
     assert any(np.allclose(color, (1, 0, 0, 1)) for color in filled)
     assert any(np.allclose(color, (146/255, 208/255, 80/255, 1)) for color in filled)
-    assert {"100nF (1)", "1uF (1)", "Other components / nets"}.issubset(captured["labels"])
+    assert captured["labels"] == ["100nF (1)", "1uF (1)"]
 
 
 def test_capacity_legend_counts_only_visible_active_caps_on_each_side(tmp_path, monkeypatch):
@@ -323,9 +323,7 @@ def test_capacity_legend_counts_only_visible_active_caps_on_each_side(tmp_path, 
         return original(canvas, filename, *args, **kwargs)
     monkeypatch.setattr(render.FigureCanvasAgg, "print_png", capture)
     render.render_placement(spd, config, "Top", tmp_path / "top-counts.png")
-    assert {"100nF (2)", "Unknown capacitance (1)", "Other components / nets", "Inactive (2)"}.issubset(captured["labels"])
-    assert not any(label.startswith("1uF") for label in captured["labels"])
-    assert not any(label.startswith("Other components / nets (") for label in captured["labels"])
+    assert set(captured["labels"]) == {"100nF (2)", "Unknown capacitance (1)", "Inactive (2)"}
     render.render_placement(spd, config, "Bottom", tmp_path / "bottom-counts.png")
     assert {"100nF (2)", "Unknown capacitance (1)"}.issubset(captured["labels"])
 
