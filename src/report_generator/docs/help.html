@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>SPD Report Generator 0.1.14 · 사용 설명서</title>
+<title>SPD Report Generator 0.1.15 · 사용 설명서</title>
 <style>
 body { background-color: #202226; color: #eceef1; font-family: "Malgun Gothic", "Segoe UI", sans-serif; font-size: 11pt; margin: 18px; }
 p, li { line-height: 145%; }
@@ -51,7 +51,7 @@ section { margin-bottom: 24px; }
 <a name="top"></a>
 <a class="skip" href="#quickstart">본문으로 건너뛰기</a>
 <header>
-<p class="eyebrow">SPD REPORT GENERATOR · v0.1.14</p>
+<p class="eyebrow">SPD REPORT GENERATOR · v0.1.15</p>
 <h1>입력 파일에서 Excel 보고서까지</h1>
 <p>SPD의 부품·모델·배치, Touchstone의 임피던스, 직접 입력한 DCR을 조합해 보고서를 만듭니다. <strong>파일 처리는 이 PC에서 이루어지며 클라우드 업로드나 계정 연결이 필요하지 않습니다.</strong></p>
 <p class="muted">프로그램에서 <b>Help → 사용 설명서</b> 또는 <kbd>F1</kbd>로 이 문서를 엽니다. 프로그램 안의 전용 창에서 인터넷 없이 읽습니다. 목차·본문 링크와 뒤로·앞으로·목차 버튼으로 이동할 수 있습니다. 시작 메뉴의 Help도 같은 전용 창을 엽니다.</p>
@@ -77,7 +77,7 @@ section { margin-bottom: 24px; }
 <a name="quickstart"></a>
 <h2>1. 처음 실행하기</h2>
 <ol>
-<li>Windows x64용 <code>SPD-Report-Generator-v0.1.14-Setup-x64.exe</code>를 실행해 설치합니다. 설치에는 관리자 권한이 필요합니다. 기본 경로는 <code>C:\Program Files\SPD Report Generator</code>이며, 설치 화면에서 다른 드라이브나 폴더를 선택할 수 있습니다. 바탕 화면 바로가지는 설치 중 선택할 수 있습니다.</li>
+<li>Windows x64용 <code>SPD-Report-Generator-v0.1.15-Setup-x64.exe</code>를 실행해 설치합니다. 설치에는 관리자 권한이 필요합니다. 기본 경로는 <code>C:\Program Files\SPD Report Generator</code>이며, 설치 화면에서 다른 드라이브나 폴더를 선택할 수 있습니다. 바탕 화면 바로가지는 설치 중 선택할 수 있습니다.</li>
 <li>시작 메뉴에서 <b>SPD Report Generator</b>를 엽니다. 같은 메뉴의 <b>Help</b>로 이 설명서를 바로 열 수 있습니다.</li>
 <li><b>1 입력</b>에서 필요한 SPD·Touchstone 파일을 고르고 <b>파일 읽기</b>를 누릅니다. 제목, 제품명, 보드 종류와 작성일 등을 입력합니다.</li>
 <li><b>2 채널·그룹</b>에서 사용할 행을 고르고 Net·사이트·채널·SPD 포트를 확인합니다. 모호한 연결을 해결한 뒤 <b>확인</b>에 체크합니다.</li>
@@ -205,8 +205,8 @@ section { margin-bottom: 24px; }
 <li><b>3 CAP·DCR → DCR → Excel 표 가져오기…</b>에서 <code>.xlsx</code> 파일과 시트를 선택합니다.</li>
 <li><b>IRDrop 측정표</b>는 <code>Name</code>을 채널, <code>SITE</code>를 사이트, 마지막 <code>DCR_IRDrop[mΩ]</code> 열을 DCR로 읽습니다. 전류·전압 열은 그대로 두세요. DCR 열이 수식이면 Excel에서 계산 후 저장할 것. 파일에 저장된 계산 결과를 읽습니다.</li>
 <li>일반 측정표는 <code>Site</code>·<code>Channel</code>·<code>DCR</code> 머리글을 포함할 것. 한글 <code>사이트</code>·<code>채널</code>(또는 <code>채널명</code>)도 사용 가능. 행·열 순서는 자유이며 비고 등 추가 열은 무시합니다.</li>
-<li>채널·그룹에 선택한 대상이 있으면 각 사이트·채널의 값을 하나씩 입력할 것. 이름의 대소문자는 구분하지 않습니다. 중복·누락·알 수 없는 대상은 가져오기 전에 안내합니다.</li>
-<li><b>DCR 가져오기 확인</b> 창에서 대응한 사이트·채널과 mΩ 값을 확인합니다. 확정하면 기존 DCR 표 전체를 새 값으로 <strong>교체</strong>합니다. 취소하면 기존 표를 유지합니다.</li>
+<li>측정표의 채널에는 원래 채널명 또는 해당 사이트의 <b>보고서 표시명</b>을 사용할 수 있습니다. 채널 양식의 <code>net</code> 열에 표시명을 입력했다면 <b>2 채널·그룹</b>에서 양식을 먼저 불러오세요. 사이트 <code>0</code>은 <code>SITE0</code>과 연결됩니다. 중복 측정값이나 구분할 수 없는 이름은 해당 행에서 확인하세요.</li>
+<li><b>DCR 가져오기 확인</b> 창에서 사이트별 원래 채널명, 보고서 표시명과 mΩ 값을 확인합니다. 측정표에 일부 선택 채널이 빠져 있어도 가져올 수 있습니다. <strong>확인하면 기존 DCR 표 전체를 이번에 읽은 값으로 교체합니다.</strong> 미입력 항목에 있던 기존 값도 삭제됩니다. 취소하면 기존 표를 유지합니다.</li>
 </ol>
 <div class="table-wrap"><table><caption>IRDrop 형식 예시 · POWER_A의 DCR은 SITE1에서 4 mΩ, SITE0에서 2 mΩ</caption>
 <thead><tr><th scope="col">Name</th><th scope="col">SITE</th><th scope="col">NominalCurrent(A)</th><th scope="col">NominalVoltage(V)</th><th scope="col">ActualVoltage(V)</th><th scope="col">DCR_IRDrop[mΩ]</th></tr></thead>
@@ -295,7 +295,7 @@ section { margin-bottom: 24px; }
 <h3>PI 표가 비거나 일부 페이지가 없음</h3>
 <p>Touchstone을 읽었는지, 사용·요약·확인이 켜져 있는지, 기준 주파수가 입력 범위에 들어가는지 확인합니다. 하단 로그에 포함·제외 페이지와 계산 실패 사유가 표시됩니다.</p>
 <h3>DCR 개수가 맞지 않음</h3>
-<p>전체 표는 머리글과 누락·중복된 사이트·채널을 확인할 것. 숫자 한 열만 붙여넣을 때는 머리글을 제외하고 선택한 대상 수와 순서를 확인하세요.</p>
+<p>머리글이 있는 표는 확인창에서 미입력으로 표시된 사이트·채널을 원본 측정표와 대조할 것. 숫자 한 열만 붙여넣을 때는 선택한 대상 수만큼의 값을 지정한 순서로 복사하세요.</p>
 <h3>저장할 수 없음</h3>
 <p>대상 Excel 파일이 다른 프로그램에서 열려 있는지, 폴더에 저장할 수 있는지 확인합니다. 입력 파일을 출력 경로로 선택하지 마세요. 입력과 연결을 수정했다면 미리보기를 다시 갱신한 뒤 저장하세요.</p>
 <p class="top-link"><a href="#top">문서 처음으로 ↑</a></p>
@@ -318,6 +318,6 @@ section { margin-bottom: 24px; }
 </section>
 </div>
 </main>
-<footer><p>SPD Report Generator v0.1.14 · Copyright © 2026 yunhyok · MIT License<br>사용한 라이브러리의 라이선스는 동봉된 <a href="THIRD_PARTY_NOTICES.txt">THIRD_PARTY_NOTICES.txt</a>를 참고하세요.</p></footer>
+<footer><p>SPD Report Generator v0.1.15 · Copyright © 2026 yunhyok · MIT License<br>사용한 라이브러리의 라이선스는 동봉된 <a href="THIRD_PARTY_NOTICES.txt">THIRD_PARTY_NOTICES.txt</a>를 참고하세요.</p></footer>
 </body>
 </html>

@@ -430,7 +430,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(cap, "CAP")
         dcr = QWidget()
         dcr_layout = QVBoxLayout(dcr)
-        dcr_note = QLabel("Excel 파일이나 복사한 표에서 사이트·채널 이름으로 DCR을 찾습니다. 붙여넣을 때는 머리글을 포함하세요. 숫자 한 열만 붙여넣을 때는 아래 순서를 따릅니다.")
+        dcr_note = QLabel("<b>사이트와 원래 채널명 또는 보고서 표시명으로 매칭합니다.</b> Excel 파일이나 복사한 표를 가져오며, 붙여넣을 때는 머리글을 포함하세요. 숫자 한 열은 아래 순서로 대응합니다.")
         dcr_note.setWordWrap(True)
         dcr_layout.addWidget(dcr_note)
         row = QHBoxLayout()
@@ -824,16 +824,32 @@ class MainWindow(QMainWindow):
     def confirm_dcr(self, rows, source_path=""):
         config = self.collect_config(dcr=rows)
         config.dcr_source_path = source_path
+        remaining = {}
+        for mapping in config.mappings:
+            if mapping.selected and mapping.site.strip() and mapping.channel.strip():
+                key = (mapping.site.strip(), mapping.channel.strip())
+                remaining.setdefault(key, mapping.display_name.strip() or mapping.channel)
+        display_rows = []
+        for entry in rows:
+            key = (entry.site, entry.channel)
+            name = remaining.pop(key, entry.channel)
+            display_rows.append((entry.site, entry.channel, name, f"{entry.resistance_mohm:.12g}"))
+        missing_count = len(remaining)
+        display_rows.extend((site, channel, name, "미입력")
+                            for (site, channel), name in remaining.items())
         dialog = QDialog(self)
         dialog.setWindowTitle("DCR 가져오기 확인")
-        dialog.resize(650, 500)
+        dialog.resize(900, 500)
         layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel(f"사이트·채널과 값을 확인하세요. 확인을 누르면 기존 DCR 표를 아래 {len(rows)}개 값으로 교체합니다."))
-        table = make_table(["사이트", "채널", "DCR (mΩ)"])
-        table.setRowCount(len(rows))
-        for index, row in enumerate(rows):
-            for col, value in enumerate((row.site, row.channel, row.resistance_mohm)):
+        summary = QLabel(f"측정 {len(rows)}개 · 미입력 {missing_count}개\n확인하면 기존 DCR 표를 측정된 값 {len(rows)}개로 교체합니다. 미입력 대상의 기존 값도 제거됩니다.")
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+        table = make_table(["사이트", "원본 채널", "보고서 표시명", "DCR (mΩ)"])
+        table.setRowCount(len(display_rows))
+        for index, row in enumerate(display_rows):
+            for col, value in enumerate(row):
                 table.setItem(index, col, text_item(value, False))
+        table.resizeColumnsToContents()
         self.sort_dcr_table(table)
         layout.addWidget(table)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)

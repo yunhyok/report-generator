@@ -70,12 +70,10 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 edited.active["E2"] = "VDD_CORE_IO"
                 measurements = edited.create_sheet("DCR")
                 measurements.append(["Name", "SITE", "NominalCurrent(A)", "NominalVoltage(V)", "ActualVoltage(V)", "DCR_IRDrop[mΩ]"])
-                measurements.append(["POWER", 0, 0.5, 1, 0.999, 2])
+                measurements.append(["VDD_CORE_IO", 0, 0.5, 1, 0.999, 2])
                 edited.save(template)
                 edited.close()
-                rows = read_dcr_sheet(template, "DCR", mappings)
-                assert rows == [DcrRow("SITE0", "POWER", 2)]
-                config = ReportConfig(mappings=mappings, dcr=rows)
+                config = ReportConfig(mappings=mappings)
                 window.spd, window.ts, window.config = spd, ts, config
                 window.fill_mappings()
                 window.fill_caps()
@@ -94,6 +92,9 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 assert config.settings.use_priority and config.mappings[0].group == "Load rails"
                 mapping = config.mappings[0]
                 assert (mapping.display_name, mapping.net, mapping.channel) == ("VDD_CORE_IO", "SITE0-POWER", "POWER")
+                config.dcr = read_dcr_sheet(template, "DCR", config.mappings)
+                assert config.dcr == [DcrRow("SITE0", "POWER", 2)]
+                window.fill_dcr()
                 window.grab().save(str(folder / "ui.png"))
                 state["stage"] = "preview"
                 runner.start("preview", {"config": config, "spd": spd, "ts": ts, "folder": str(folder)})

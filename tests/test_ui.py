@@ -2,7 +2,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QMessageBox, QTableWidget
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QLabel, QMessageBox, QTableWidget
 from PySide6.QtCore import Qt
 
 from report_generator.core.models import ChannelMapping, Component, DcrRow, Port, ReportConfig, SpiceModel, SpdData
@@ -227,9 +227,68 @@ def test_dcr_import_matches_labels_from_chosen_sheet_or_clipboard(window, monkey
     assert window.config.dcr_source_path == ("" if clipboard else str(path.resolve()))
 
 
+@pytest.mark.parametrize("accepted", [False, True])
+def test_partial_dcr_excel_import_shows_missing_targets_and_replaces_only_on_accept(
+        window, monkeypatch, tmp_path, accepted):
+    from openpyxl import Workbook
+
+    window.config.mappings = [
+        ChannelMapping(site="SITE1", channel="A", display_name="Core Rail"),
+        ChannelMapping(site="SITE1", channel="B"),
+        ChannelMapping(site="SITE2", channel="A", display_name="Memory Rail"),
+    ]
+    window.fill_mappings()
+    old_rows = [DcrRow("SITE9", "OLD", 9.0), DcrRow("SITE1", "B", 88.0)]
+    old_table = [[row.site, row.channel, f"{row.resistance_mohm:.12g}"] for row in old_rows]
+    window.config.dcr = old_rows.copy()
+    window.config.dcr_source_path = "old.xlsx"
+    window.fill_dcr()
+
+    path = tmp_path / "synthetic-measurements.xlsx"
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "DCR"
+    sheet.append(["Site", "Channel", "DCR (mΩ)"])
+    sheet.append(["SITE2", "Memory Rail", 11.0])
+    sheet.append(["SITE1", "Core Rail", 2.5])
+    book.save(path)
+    book.close()
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: (str(path), ""))
+    monkeypatch.setattr(window, "error", lambda error: pytest.fail(str(error)))
+
+    def inspect_confirmation(dialog):
+        assert dialog.windowTitle() == "DCR 가져오기 확인"
+        summary = dialog.findChild(QLabel).text()
+        assert "측정 2개 · 미입력 1개" in summary
+        assert "기존 값도 제거됩니다" in summary
+        table = dialog.findChild(QTableWidget)
+        assert [table.horizontalHeaderItem(col).text() for col in range(4)] == [
+            "사이트", "원본 채널", "보고서 표시명", "DCR (mΩ)"]
+        rows = [[table.item(row, col).text() for col in range(4)] for row in range(table.rowCount())]
+        assert rows == [
+            ["SITE1", "A", "Core Rail", "2.5"],
+            ["SITE2", "A", "Memory Rail", "11"],
+            ["SITE1", "B", "B", "미입력"],
+        ]
+        return QDialog.DialogCode.Accepted if accepted else QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(QDialog, "exec", inspect_confirmation)
+    window.import_dcr()
+
+    if accepted:
+        assert window.config.dcr == [DcrRow("SITE1", "A", 2.5), DcrRow("SITE2", "A", 11.0)]
+        assert window.config.dcr_source_path == str(path.resolve())
+        assert window.dcr_table.rowCount() == 2
+    else:
+        assert window.config.dcr == old_rows
+        assert window.config.dcr_source_path == "old.xlsx"
+        assert [[window.dcr_table.item(row, col).text() for col in range(3)]
+                for row in range(window.dcr_table.rowCount())] == old_table
+
+
 def test_dcr_priority_sorts_visible_rows_without_reassigning_values_or_losing_edits(window, monkeypatch, tmp_path):
-    def visible_rows(table):
-        return [tuple(table.item(table.verticalHeader().logicalIndex(i), col).text() for col in range(3))
+    def visible_rows(table, columns=3):
+        return [tuple(table.item(table.verticalHeader().logicalIndex(i), col).text() for col in range(columns))
                 for i in range(table.rowCount())]
 
     window.config.settings.use_priority = True
@@ -239,8 +298,9 @@ def test_dcr_priority_sorts_visible_rows_without_reassigning_values_or_losing_ed
     expected = [("S1", "B", 12), ("S2", "B", 22), ("S1", "A", 11), ("S2", "A", 21)]
 
     def confirm(dialog):
-        rows = visible_rows(dialog.findChild(QTableWidget))
-        assert [(s, c, float(v)) for s, c, v in rows] == expected
+        rows = visible_rows(dialog.findChild(QTableWidget), 4)
+        assert [(s, c, name, float(v)) for s, c, name, v in rows] == [
+            (site, channel, channel, value) for site, channel, value in expected]
         return QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(QDialog, "exec", confirm)

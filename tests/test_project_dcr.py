@@ -80,7 +80,8 @@ def test_range_reports_blank_cell(tmp_path):
 
 
 def test_keyed_dcr_clipboard_reorders_headers_and_preserves_mapping_names():
-    mappings = [ChannelMapping(site="SITE2", channel="VDD"), ChannelMapping(site="SITE1", channel="VDD")]
+    mappings = [ChannelMapping(site="SITE2", channel="VDD"), ChannelMapping(site="SITE1", channel="VDD"),
+                ChannelMapping(site="SITE3", channel="VDD")]
     text = "측정 결과\n설명\tDCR (Ω)\t채널명\t사이트\t비고\nignore\t.002\tvdd\tsite1\tx\nignore\t0\tVDD\tSITE2\tx"
     assert parse_dcr_table(text, mappings) == [DcrRow("SITE1", "VDD", 2), DcrRow("SITE2", "VDD", 0)]
 
@@ -88,7 +89,6 @@ def test_keyed_dcr_clipboard_reorders_headers_and_preserves_mapping_names():
 @pytest.mark.parametrize("text, message", [
     ("Site\tChannel\tDCR\nA\tVDD\t1\na\tvdd\t2", "중복"),
     ("Site\tChannel\tDCR\nX\tVDD\t1", "없는"),
-    ("Site\tChannel\tDCR\nA\tVDD\t1", "누락"),
     ("Site\tChannel\tDCR\nA\tVDD\t", "비어"),
     ("Site\tChannel\tDCR\nA\tVDD\t#VALUE!", "숫자"),
     ("Site\tChannel\tDCR\t저항\nA\tVDD\t1\t1", "제목이 중복"),
@@ -131,10 +131,11 @@ def test_keyed_dcr_excel_scans_full_sheet_and_rejects_uncached_formula(tmp_path)
     sheet.append(["DCR 데이터"])
     sheet.append([])
     sheet.append(["비고", "Channel", "DCR [µΩ]", "Site"])
-    sheet.append(["=1+1", "VDD", 500, 0])
+    sheet.append(["=1+1", "Core", 500, 0])
     path = tmp_path / "keyed.xlsx"
     book.save(path)
-    mappings = [ChannelMapping(site="0", channel="VDD")]
+    mappings = [ChannelMapping(site="0", channel="VDD", display_name="Core"),
+                ChannelMapping(site="1", channel="VDD", display_name="Core")]
     assert read_dcr_sheet(path, "측정", mappings) == [DcrRow("0", "VDD", .5)]
     sheet.cell(4, 3, "=1+1")
     book.save(path)
@@ -149,7 +150,7 @@ def test_dcr_matrix_report_roundtrip_and_clipboard(tmp_path):
     from report_generator.core.report import _write_dcr
     mappings = [ChannelMapping(site="SITE2", channel="A", display_name="Core"),
                 ChannelMapping(site="SITE1", channel="A", display_name="Core"),
-                ChannelMapping(site="SITE2", channel="B")]
+                ChannelMapping(site="SITE2", channel="B"), ChannelMapping(site="SITE1", channel="B")]
     rows = [DcrRow("SITE2", "A", 1), DcrRow("SITE1", "A", 2), DcrRow("SITE2", "B", 0)]
     book = Workbook()
     _write_dcr(book.active, rows, ReportConfig(mappings=mappings))
@@ -167,8 +168,7 @@ def test_dcr_matrix_dcr_only_and_missing_selected_cells():
     with pytest.raises(ValueError, match="여러 줄"):
         parse_dcr_table('Channel\t01\t02\n"01: Core\n02: Logic"\t0\t2', [])
     mappings = [ChannelMapping(site="01", channel="RAIL"), ChannelMapping(site="02", channel="RAIL")]
-    with pytest.raises(ValueError, match="누락"):
-        parse_dcr_table("Channel\t01\t02\nRAIL\t0\t", mappings)
+    assert parse_dcr_table("Channel\t01\t02\nRAIL\t0\t", mappings) == [DcrRow("01", "RAIL", 0)]
     with pytest.raises(ValueError, match="사이트 제목이 중복"):
         parse_dcr_table("Channel\tA\ta\nRAIL\t1\t2", [])
 
@@ -359,3 +359,18 @@ def test_dcr_matrix_rejects_swapped_raw_and_display_labels(tmp_path):
     with pytest.raises(ValueError, match="표시명이 모호"):
         parse_dcr_table("Channel\tSITE0\nB\t1\nA\t2", mappings)
     assert parse_dcr_table("Site\tChannel\tDCR\nSITE0\tA\t1\nSITE0\tB\t2", mappings) == rows
+
+
+def test_configured_report_name_wins_over_irdrop_family_heuristic():
+    mappings = [ChannelMapping(site="SITE0", channel="LGA1-POWER"),
+                ChannelMapping(site="SITE0", channel="OTHER", display_name="POWER")]
+    text = "Name\tSITE\tDCR_IRDrop[mΩ]\nPOWER\t0\t1"
+    assert parse_dcr_table(text, mappings) == [DcrRow("SITE0", "OTHER", 1)]
+    with pytest.raises(ValueError, match="모호"):
+        parse_dcr_table(text, mappings + [ChannelMapping(site="SITE0", channel="ANOTHER", display_name="POWER")])
+
+
+@pytest.mark.parametrize("text", ["Site\tChannel\tDCR", "Channel\tSITE0\tSITE1"])
+def test_partial_named_dcr_still_rejects_wholly_empty_tables_with_mappings(text):
+    with pytest.raises(ValueError, match="가져올 DCR 값"):
+        parse_dcr_table(text, [ChannelMapping(site="SITE0", channel="A")])

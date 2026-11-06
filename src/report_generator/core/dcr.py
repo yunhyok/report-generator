@@ -270,7 +270,7 @@ def _parse_dcr_rows(table, mappings: list[ChannelMapping], unit: str) -> list[Dc
                 if forms:
                     site = next(iter(forms))
             key = (site.casefold(), channel.casefold())
-            matches = aliases.get(key, set()) | family_aliases.get(key, set())
+            matches = aliases.get(key, set()) or family_aliases.get(key, set())
             if not site_columns and key in targets:
                 matches = {key}
             if len(matches) > 1:
@@ -315,13 +315,9 @@ def _parse_dcr_rows(table, mappings: list[ChannelMapping], unit: str) -> list[Dc
                 raise ValueError(f"{index + 1}행: 채널의 DCR 값이 모두 비어 있습니다.")
     if not result:
         raise ValueError("가져올 DCR 값이 없습니다.")
-    missing = targets.keys() - seen
-    if missing:
-        examples = ", ".join(f"{targets[key][1]} / {targets[key][0]}" for key in sorted(missing)[:5])
-        raise ValueError(f"선택 대상 DCR {len(missing)}개가 누락되었습니다: {examples}")
     if targets:
         lookup = {(row.site, row.channel): row for row in result}
-        result = [lookup[key] for key in ordered_targets(mappings)]
+        result = [lookup[key] for key in ordered_targets(mappings) if key in lookup]
     return result
 
 
