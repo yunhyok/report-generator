@@ -240,7 +240,7 @@ def _interpolate_column(data: TouchstoneData, column: int, frequency_hz: float) 
 
 
 def pi_display_units(data: TouchstoneData | None, config: ReportConfig) -> tuple[int, str]:
-    """Choose one PI scale from all selected measured ports; raw Z stays in ohms."""
+    """Choose the plot scale from the selected ports at 100 MHz. Raw Z stays in ohms."""
     if config.settings.board_type.upper() != "PCB":
         return 1000, "mΩ"
     if data is None:

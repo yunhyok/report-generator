@@ -3,6 +3,7 @@ from queue import Queue
 
 import numpy as np
 from openpyxl import load_workbook
+import pytest
 
 from report_generator.core.models import ChannelMapping, Port, ReportConfig, TouchstoneData, source_signature
 from report_generator.core.report import FREQUENCIES, build_report
@@ -41,8 +42,9 @@ def test_common_display_name_changes_presentation_and_preserves_source_values(tm
     assert name == "Original"
     with_book = load_workbook(result.path)
     try:
-        assert with_book[name]["A1"].value == "Custom report · Original"
-        assert with_book[name]["A1"].data_type == "s"
+        assert with_book[name]["A1"].value is None
+        assert (with_book[name]._images[0].anchor._from.col, with_book[name]._images[0].anchor._from.row) == (1, 1)
+        assert with_book[name]["P4"].value == "Channel / [mΩ]"
         assert with_book["PI ALL"]["A1"].value == "Custom report · Power Impedance"
     finally:
         with_book.close()
@@ -50,11 +52,14 @@ def test_common_display_name_changes_presentation_and_preserves_source_values(tm
         ("RAW", "SITE0", "SPD_NET_0", "Original"), ("RAW", "SITE1", "SPD_NET_1", "Original")]
 
 
-def test_split_groups_with_same_alias_keep_distinct_sheets_and_preview_images(tmp_path):
+@pytest.mark.parametrize("use_priority", [False, True])
+def test_split_groups_with_same_alias_keep_distinct_sheets_and_preview_images(tmp_path, use_priority):
     config, ts = sample()
+    config.settings.use_priority = use_priority
     for index, mapping in enumerate(config.mappings):
         mapping.group = f"Split {index}"
         mapping.display_name = "Common_alias"
+        mapping.priority = "1" if use_priority else ""
     ts.path = str(tmp_path / "synthetic.s2p")
     (tmp_path / "synthetic.s2p").write_text("synthetic source for signature check", encoding="utf-8")
     ts.signature = source_signature(ts.path)
@@ -70,13 +75,19 @@ def test_split_groups_with_same_alias_keep_distinct_sheets_and_preview_images(tm
     book = load_workbook(report.path)
     try:
         for name in report.sheets[-2:]:
-            assert book[name]["A1"].value == name
-        assert book["Split 0"]["P5"].value == "Common_alias"
-        assert book["Split 1"]["P5"].value == "Common_alias"
-        assert book["Split 0"]["P5"].comment is None
-        assert book["Split 1"]["P5"].comment is None
-        assert book["Split 0"]["Q5"].value == 0
-        assert book["Split 1"]["Q5"].value == 1
+            detail = book[name]
+            assert detail["A1"].value is None
+            assert len(detail._images) == 1
+            assert (detail._images[0].anchor._from.col, detail._images[0].anchor._from.row) == (1, 1)
+            assert detail["P4"].value == ("Priority" if use_priority else "Channel / [mΩ]")
+        channel_column = 17 if use_priority else 16
+        site_column = channel_column + 1
+        assert book["Split 0"].cell(5, channel_column).value == "Common_alias"
+        assert book["Split 1"].cell(5, channel_column).value == "Common_alias"
+        assert book["Split 0"].cell(5, channel_column).comment is None
+        assert book["Split 1"].cell(5, channel_column).comment is None
+        assert book["Split 0"].cell(5, site_column).value == 0
+        assert book["Split 1"].cell(5, site_column).value == 1
     finally:
         book.close()
 
@@ -88,7 +99,7 @@ def test_partial_site_alias_keeps_group_and_numeric_identity(tmp_path):
     assert result.sheets[-1] == "Original"
     book = load_workbook(result.path)
     try:
-        assert book["Original"]["A1"].value == "Original"
+        assert book["Original"]["A1"].value is None
         assert book["Original"]["P5"].value == "Only_SITE0"
         assert book["Original"]["P5"].comment is None
         assert book["Original"]["P6"].value == "RAW"

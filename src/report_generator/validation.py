@@ -195,7 +195,7 @@ def inspect_workbook(path, site_names=(), *, channel_keys=None, mappings=()):
             normalized = sheet.title.replace("_", " ").upper()
             pi = _pi_tables(sheet, channel_keys, aliases)
             if pi:
-                # A detail tab may also be named PI_ALL. Its plot replaces the table at B4.
+                # A detail tab may also be named PI_ALL. Its table starts in column P.
                 summary = normalized == "PI ALL" and not (
                     sheet._images and sheet["B4"].value is None and sheet["P4"].value is not None)
                 collect("PI" if summary else "PI_DETAIL", pi)

@@ -21,7 +21,7 @@ from .touchstone import pi_display_units, plot_frequency_bounds, plot_impedance
 
 
 FONT = FontProperties(family="Malgun Gothic", size=15)
-TITLE_FONT = FontProperties(family="Malgun Gothic", size=26)
+TITLE_FONT = FontProperties(family="Malgun Gothic", size=26, weight="bold")
 COLORS = ["#2474b5", "#d95f02", "#168653", "#9857aa", "#bc3143", "#876441",
           "#d85f9c", "#53747b", "#928500", "#16a1a5", "#6067ba", "#b87524"]
 CAP_COLORS_MLO = {100e-9: "#ff0000", 1e-6: "#92d050", 4.7e-6: "#3767ff"}

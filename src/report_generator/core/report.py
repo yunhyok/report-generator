@@ -172,9 +172,7 @@ def _plan(config, spd, ts):
     for group, maps in plot_groups(config, ts).items():
         valid = any(np.any(plot_impedance(ts, m.port_index)[1] > 0) for m in maps)
         if valid:
-            title = group_title(group, maps)
-            heading = title if any(m.group.strip() or m.display_name.strip() for m in maps) else None
-            add("group", title, (group, heading))
+            add("group", group_title(group, maps), group)
         else:
             omitted[f"그룹: {group}"] = "1kHz~2GHz 표시 범위에 유효한 임피던스가 없습니다."
     return pages, omitted
@@ -212,7 +210,7 @@ def _table(ws, headers, rows, row=4, column=2, number_columns=()):
                  number_format=NUMBER if i in number_columns else None)
 
 
-def _base_sheet(wb, name, config, kind, ts=None, page_title=None):
+def _base_sheet(wb, name, config, kind, ts=None):
     ws = wb.create_sheet(name)
     ws.sheet_view.showGridLines = False
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -225,11 +223,10 @@ def _base_sheet(wb, name, config, kind, ts=None, page_title=None):
     ws.sheet_format.defaultColWidth = 9
     ws.column_dimensions["A"].width = 9
     custom_title = config.settings.title.strip()
-    if page_title is None:
-        page_title = TITLES.get(kind, "")
-    if custom_title and custom_title != "Power Integrity Report":
-        page_title = f"{custom_title} · {page_title}" if page_title else custom_title
+    page_title = TITLES.get(kind)
     if page_title:
+        if custom_title and custom_title != "Power Integrity Report":
+            page_title = f"{custom_title} · {page_title}"
         title = ws.cell(1, 1, ILLEGAL_CHARACTERS_RE.sub("", page_title)[:32767])
         title.data_type = "s"
         title.font = _font(24, True)
@@ -266,7 +263,15 @@ def _add_image(ws, path, anchor, max_width=900):
     return 5 + int(image.height / 20)
 
 
-def _write_100(ws, spots, factor, unit, use_priority=False, *, channel_keys=None):
+def _table_units(pcb, values):
+    """Choose a scale from the unrounded ohm values under one table heading."""
+    if not pcb or max((v for v in values if v is not None), default=1) < 1:
+        return 1000, "mΩ"
+    return 1, "Ω"
+
+
+def _write_100(ws, spots, *, pcb, use_priority=False, channel_keys=None):
+    factor, unit = _table_units(pcb, (values[3] for _, values, _ in spots))
     mappings = [m for m, _, _ in spots]
     sites = list(dict.fromkeys(m.site for m, _, _ in spots))
     channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
@@ -331,7 +336,8 @@ def _merged(ws, row, column, end_row, end_column, value, *, header=False, fill=N
         ws.merge_cells(start_row=row, start_column=column, end_row=end_row, end_column=end_column)
 
 
-def _pi_values(ws, row, column, values, flags, factor, number_format, fill=None):
+def _pi_values(ws, row, column, values, flags, factor, wide, fill=None):
+    number_format = "0.0_ " if wide and factor == 1000 else NUMBER
     for index, (value, interpolated) in enumerate(zip(values, flags)):
         fmt = number_format[:-2] + '"*"' if interpolated else number_format
         _put(ws, row, column + index, value * factor if value is not None else None,
@@ -344,16 +350,15 @@ def _deviation(spots):
     return (max(values) - average) / average if average else None
 
 
-def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, channel_order=(),
-              use_priority=False, pcb=None, channel_keys=None):
+def _write_pi(ws, spots, column=2, *, pcb, wide=False, detail=False, channel_order=(),
+              use_priority=False, channel_keys=None):
     channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
     by_channel = {channel: [spot for spot in spots if spot[0].channel == channel] for channel in channels}
     labels = [mapping.display_name.strip() or mapping.channel for mapping, _, _ in spots]
     priorities = _channel_priorities([m for m, _, _ in spots], use_priority)
     sections = _sections(channels, priorities, use_priority)
-    pcb = unit == "Ω" if pcb is None else pcb
-    number_format = "0.0_ " if wide and unit == "mΩ" else NUMBER
     if not wide or (detail and not pcb):
+        factor, unit = _table_units(pcb, (v for _, values, _ in spots for v in values))
         priority = use_priority
         headers = (["Priority"] if priority else []) + [f"Channel / [{unit}]", "SITE", *FREQUENCY_LABELS]
         if not detail:
@@ -388,7 +393,7 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
                     cell = _put(ws, row, channel_column, display, fill=fill)
                     _format_channel_label(cell, channel, display, channel_keys)
                     _put(ws, row, site_column, _site_value(mapping.site), fill=fill)
-                    _pi_values(ws, row, site_column + 1, values, flags, factor, number_format, fill)
+                    _pi_values(ws, row, site_column + 1, values, flags, factor, wide, fill)
                     row += 1
                 if not detail:
                     _merged(ws, row - len(entries), site_column + 6, row - 1, site_column + 6,
@@ -411,6 +416,8 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
                 ranked = use_priority and isinstance(priorities.get(band[0]), int)
                 header_row = row + ranked
                 for offset, channel in enumerate(band):
+                    entries = by_channel[channel]
+                    factor, unit = _table_units(pcb, (v for _, values, _ in entries for v in values))
                     start = column + offset * block_width
                     color_index = channel_order.index(channel) if channel in channel_order else channels.index(channel)
                     fill = CHANNEL_HEADERS[color_index % len(CHANNEL_HEADERS)]
@@ -418,7 +425,7 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
                         _merged(ws, row, start, row, start + 2, "Priority", header=True, fill=fill)
                         _merged(ws, row, start + 3, row, start + block_width - 1,
                                 priorities[channel], header=True, fill=fill)
-                    display = _channel_label(channel, [mapping for mapping, _, _ in by_channel[channel]])
+                    display = _channel_label(channel, [mapping for mapping, _, _ in entries])
                     _merged(ws, header_row, start, header_row, start + block_width - 1,
                             f"{display} / [{unit}]", header=True, fill=fill)
                     for index, heading in enumerate(["SITE", *FREQUENCY_LABELS] + ([] if detail else ["편차"])):
@@ -431,9 +438,9 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
                     )[offset][:block_width]
                     _widths(ws, start, widths)
                     _format_channel_label(ws.cell(header_row, start), channel, display, channel_keys, sum(widths))
-                    for data_row, (mapping, values, flags) in enumerate(by_channel[channel], header_row + 2):
+                    for data_row, (mapping, values, flags) in enumerate(entries, header_row + 2):
                         _put(ws, data_row, start, _site_value(mapping.site))
-                        _pi_values(ws, data_row, start + 1, values, flags, factor, number_format)
+                        _pi_values(ws, data_row, start + 1, values, flags, factor, wide)
                     if not detail:
                         end = header_row + 1 + len(by_channel[channel])
                         _merged(ws, header_row + 2, start + 6, end, start + 6,
@@ -539,7 +546,7 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
     pages, omitted = _plan(config, spd, ts)
     if not pages:
         raise ValueError("보고서를 만들 유효한 데이터가 없습니다. 입력과 채널 매핑을 확인하세요.")
-    factor, unit = pi_display_units(ts, config)
+    plot_units = pi_display_units(ts, config)
     pcb = config.settings.board_type.upper() == "PCB"
     warnings = list(dict.fromkeys([*(spd.warnings if spd else []), *(ts.warnings if ts else [])]))
     if any(any(flags) for _, _, flags in _spot_rows(config, ts)):
@@ -555,15 +562,12 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                 checkpoint(cancel)
                 if progress:
                     progress(f"시트 생성: {name}", index, len(pages))
-                heading = None
-                if kind == "group":
-                    group, heading = payload
-                ws = _base_sheet(wb, name, config, kind, ts, page_title=heading)
+                ws = _base_sheet(wb, name, config, kind, ts)
                 image_bottom = 4
                 if kind == "100":
-                    _write_100(ws, payload, factor, unit, config.settings.use_priority, channel_keys=channel_keys)
+                    _write_100(ws, payload, pcb=pcb, use_priority=config.settings.use_priority, channel_keys=channel_keys)
                 elif kind == "pi":
-                    _write_pi(ws, payload, factor, unit,
+                    _write_pi(ws, payload,
                               wide=len({mapping.site for mapping, _, _ in payload}) > 8,
                               use_priority=config.settings.use_priority, pcb=pcb, channel_keys=channel_keys)
                 elif kind == "dcr":
@@ -576,11 +580,12 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                         path = render_placement(spd, config, side, Path(images) / f"placement-{side}.png")
                         image_bottom = max(image_bottom, _add_image(ws, path, "B4" if side_index == 0 else "P4", max_width=850))
                 elif kind == "group":
+                    group = payload
                     path = render_group_plot(ts, config, group, Path(images) / f"group-{index}.png",
-                                             display_units=(factor, unit))
-                    image_bottom = _add_image(ws, path, "B4")
+                                             display_units=plot_units)
+                    image_bottom = _add_image(ws, path, "B2")
                     _write_pi(ws, [(m, values, flags) for m, values, flags in _spot_rows(config, ts)
-                                   if plot_group(m) == group], factor, unit, column=16,
+                                   if plot_group(m) == group], column=16,
                               wide=len({mapping.site for mapping in _mappings(config, ts)}) > 8, detail=True,
                               channel_order=list(dict.fromkeys(mapping.channel for mapping in _mappings(config, ts))),
                               use_priority=config.settings.use_priority, pcb=pcb, channel_keys=channel_keys)
