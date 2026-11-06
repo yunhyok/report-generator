@@ -18,7 +18,7 @@ from openpyxl.worksheet.views import Selection
 from .models import ReportConfig, ReportResult, SpdData, TouchstoneData, checkpoint
 from .render import PLACEMENT_SIDES, render_group_plot, render_placement
 from .capacitance import summarize_caps
-from .mapping import group_presentation, priority_value
+from .mapping import group_presentation, plot_group, priority_value
 from .touchstone import interpolate_impedance, pi_display_units, plot_frequency_bounds, plot_impedance
 
 
@@ -127,11 +127,19 @@ def _spot_rows(config, ts, summary=False):
 
 def plot_groups(config, ts):
     groups = {}
-    if ts is not None:
-        for mapping in _mappings(config, ts):
-            if mapping.group:
-                groups.setdefault(mapping.group, []).append(mapping)
-    return groups
+    mappings = _mappings(config, ts) if ts is not None else []
+    for mapping in mappings:
+        groups.setdefault(plot_group(mapping), []).append(mapping)
+    if not config.settings.use_priority:
+        return groups
+    automatic = {group for group, members in groups.items() if all(member.channel == group for member in members)}
+    channels = list(dict.fromkeys(mapping.channel for mapping in mappings))
+    priorities = _channel_priorities(mappings, config.settings.use_priority)
+    ordered = iter(channel for _, section in _sections(channels, priorities, config.settings.use_priority)
+                   for channel in section if channel in automatic)
+    # Keep explicitly grouped pages in their original slots and reorder only per-channel pages.
+    names = [next(ordered) if group in automatic else group for group in groups]
+    return {name: groups[name] for name in names}
 
 
 def _safe_sheet_name(label, used):
@@ -583,7 +591,7 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                                              display_units=(factor, unit))
                     image_bottom = _add_image(ws, path, "B4")
                     _write_pi(ws, [(m, values, flags) for m, values, flags in _spot_rows(config, ts)
-                                   if m.group == group], factor, unit, column=16,
+                                   if plot_group(m) == group], factor, unit, column=16,
                               wide=len({mapping.site for mapping in _mappings(config, ts)}) > 8, detail=True,
                               channel_order=list(dict.fromkeys(mapping.channel for mapping in _mappings(config, ts))),
                               use_priority=config.settings.use_priority, pcb=pcb)

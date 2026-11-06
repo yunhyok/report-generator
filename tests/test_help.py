@@ -98,7 +98,7 @@ def test_navigation_blocks_network_and_other_local_files(help_window, tmp_path):
 
 def test_manual_formats_and_small_window(help_window, app):
     browser = help_window.browser
-    for needle in ("입력 파일에서 Excel 보고서까지", "한 열을 채널에 순서대로 연결하기", "다중 포트 S 행렬", "--validate-project"):
+    for needle in ("입력 파일에서 Excel 보고서까지", "Excel 표 가져오기", "다중 포트 S 행렬", "--validate-project"):
         cursor = browser.document().find(needle)
         assert not cursor.isNull()
         assert cursor.charFormat().foreground().color() in (QColor("#eceef1"), QColor("#ffffff"))

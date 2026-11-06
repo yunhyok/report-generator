@@ -16,7 +16,7 @@ from matplotlib.ticker import FuncFormatter, NullFormatter
 
 from .models import ReportConfig, SpdData, TouchstoneData
 from .capacitance import component_active, format_capacitance, resolved_capacitance
-from .mapping import group_presentation
+from .mapping import group_presentation, plot_group
 from .touchstone import pi_display_units, plot_frequency_bounds, plot_impedance
 
 
@@ -74,7 +74,7 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
                       outputpath: str | Path, *, display_units: tuple[int, str] | None = None) -> str:
     """Render selected mapped ports from the same Z diagonal used by Excel."""
     mappings = [m for m in config.mappings if m.selected and m.confirmed and
-                m.group == group and m.port_index is not None]
+                plot_group(m) == group and m.port_index is not None]
     if not mappings:
         raise ValueError("그룹에 선택한 Touchstone 포트가 없습니다.")
     title, show_names = group_presentation(group, mappings)

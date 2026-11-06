@@ -102,7 +102,7 @@ def test_partial_and_summary_flags_and_safe_unique_names(tmp_path):
     assert plan_pages(config, None, ts)[0][-2:] == ["A" * 30, "😀" * 15]
     config.mappings[0].group = config.mappings[1].group = ""
     result = build_report(config, None, ts, tmp_path / "summary.xlsx")
-    assert result.sheets == ["PI ALL@100MHz", "PI ALL"]
+    assert result.sheets == ["PI ALL@100MHz", "PI ALL", "VDD"]
     w = openpyxl.load_workbook(result.path)
     assert w["PI ALL"]["D5"].value == 0
     assert w["PI ALL"]["C6"].value is None

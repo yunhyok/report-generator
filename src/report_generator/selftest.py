@@ -13,6 +13,7 @@ def run(destination: str) -> int:
     import os
     from openpyxl import load_workbook
     from .core.channel_settings import write_channel_template
+    from .core.dcr import read_dcr_sheet
     from .core.models import DcrRow, ReportConfig
     from .jobs import JobRunner
     from .ui.window import MainWindow
@@ -67,9 +68,14 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 edited.active["C2"] = 1
                 edited.active["D2"] = "Load rails"
                 edited.active["E2"] = "VDD_CORE_IO"
+                measurements = edited.create_sheet("DCR")
+                measurements.append(["Name", "SITE", "NominalCurrent(A)", "NominalVoltage(V)", "ActualVoltage(V)", "DCR_IRDrop[mΩ]"])
+                measurements.append(["POWER", 0, 0.5, 1, 0.999, 2])
                 edited.save(template)
                 edited.close()
-                config = ReportConfig(mappings=mappings, dcr=[DcrRow("SITE0", "POWER", 2)])
+                rows = read_dcr_sheet(template, "DCR", mappings)
+                assert rows == [DcrRow("SITE0", "POWER", 2)]
+                config = ReportConfig(mappings=mappings, dcr=rows)
                 window.spd, window.ts, window.config = spd, ts, config
                 window.fill_mappings()
                 window.fill_caps()
@@ -110,6 +116,11 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 assert dcr.cell(5, site_column).value == 2
                 assert all(sheet.freeze_panes is None for sheet in book)
                 book.close()
+                window.tabs.setCurrentIndex(3)
+                window.preview_book = report.path
+                window.preview_selector.addItem("표 · DCR", ("table", "DCR"))
+                assert "VDD_CORE_IO" in window.preview_table.toPlainText()
+                window.grab().save(str(folder / "dcr-preview.png"))
                 window.open_help()
                 assert window.help_window.isVisible()
                 assert "채널 순위 설정" in window.help_window.browser.toPlainText()

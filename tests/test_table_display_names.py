@@ -59,11 +59,13 @@ def test_all_table_labels_use_display_names_without_changing_numeric_identity(tm
     result = report.build_report(config, spd, ts, tmp_path / "aliased.xlsx")
     original, changed = load_workbook(baseline.path), load_workbook(result.path)
     try:
-        assert changed.sheetnames == original.sheetnames
-        for sheet in changed:
-            assert numeric_cells(sheet) == numeric_cells(original[sheet.title])
-            assert str(sheet.merged_cells) == str(original[sheet.title].merged_cells)
-            assert (sheet.max_row, sheet.max_column) == (original[sheet.title].max_row, original[sheet.title].max_column)
+        assert changed.sheetnames[:5] == original.sheetnames[:5]
+        assert changed.sheetnames[5:] == (["=Common Display", "=Common Display (2)"]
+                                        if aliases == "common" else original.sheetnames[5:])
+        for sheet, previous in zip(changed, original):
+            assert numeric_cells(sheet) == numeric_cells(previous)
+            assert str(sheet.merged_cells) == str(previous.merged_cells)
+            assert (sheet.max_row, sheet.max_column) == (previous.max_row, previous.max_column)
         for index, channel in enumerate(("=RAW_A/[0]", "RAW_B")):
             display = "=Common Display" if aliases == "common" else "\n".join(
                 f"SITE{site}: " + (f"Alias {channel}" if site == 0 else channel) for site in range(site_count))

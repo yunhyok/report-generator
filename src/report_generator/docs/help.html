@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>SPD Report Generator 0.1.11 · 사용 설명서</title>
+<title>SPD Report Generator 0.1.12 · 사용 설명서</title>
 <style>
 body { background-color: #202226; color: #eceef1; font-family: "Malgun Gothic", "Segoe UI", sans-serif; font-size: 11pt; margin: 18px; }
 p, li { line-height: 145%; }
@@ -51,7 +51,7 @@ section { margin-bottom: 24px; }
 <a name="top"></a>
 <a class="skip" href="#quickstart">본문으로 건너뛰기</a>
 <header>
-<p class="eyebrow">SPD REPORT GENERATOR · v0.1.11</p>
+<p class="eyebrow">SPD REPORT GENERATOR · v0.1.12</p>
 <h1>입력 파일에서 Excel 보고서까지</h1>
 <p>SPD의 부품·모델·배치, Touchstone의 임피던스, 직접 입력한 DCR을 조합해 보고서를 만듭니다. <strong>파일 처리는 이 PC에서 이루어지며 클라우드 업로드나 계정 연결이 필요하지 않습니다.</strong></p>
 <p class="muted">프로그램에서 <b>Help → 사용 설명서</b> 또는 <kbd>F1</kbd>로 이 문서를 엽니다. 프로그램 안의 전용 창에서 인터넷 없이 읽습니다. 목차·본문 링크와 뒤로·앞으로·목차 버튼으로 이동할 수 있습니다. 시작 메뉴의 Help도 같은 전용 창을 엽니다.</p>
@@ -77,11 +77,11 @@ section { margin-bottom: 24px; }
 <a name="quickstart"></a>
 <h2>1. 처음 실행하기</h2>
 <ol>
-<li>Windows x64용 <code>SPD-Report-Generator-v0.1.11-Setup-x64.exe</code>를 실행해 설치합니다. 설치에는 관리자 권한이 필요합니다. 기본 경로는 <code>C:\Program Files\SPD Report Generator</code>이며, 설치 화면에서 다른 드라이브나 폴더를 선택할 수 있습니다. 바탕 화면 바로가지는 설치 중 선택할 수 있습니다.</li>
+<li>Windows x64용 <code>SPD-Report-Generator-v0.1.12-Setup-x64.exe</code>를 실행해 설치합니다. 설치에는 관리자 권한이 필요합니다. 기본 경로는 <code>C:\Program Files\SPD Report Generator</code>이며, 설치 화면에서 다른 드라이브나 폴더를 선택할 수 있습니다. 바탕 화면 바로가지는 설치 중 선택할 수 있습니다.</li>
 <li>시작 메뉴에서 <b>SPD Report Generator</b>를 엽니다. 같은 메뉴의 <b>Help</b>로 이 설명서를 바로 열 수 있습니다.</li>
 <li><b>1 입력</b>에서 필요한 SPD·Touchstone 파일을 고르고 <b>파일 읽기</b>를 누릅니다. 제목, 제품명, 보드 종류와 작성일 등을 입력합니다.</li>
 <li><b>2 채널·그룹</b>에서 사용할 행을 고르고 Net·사이트·채널·SPD 포트를 확인합니다. 모호한 연결을 해결한 뒤 <b>확인</b>에 체크합니다.</li>
-<li>순위를 지정하려면 <b>채널 순위 설정…</b>을 엽니다. 채널 옆 입력 칸을 클릭해 순위를 입력하고, PI·CAP 표에 적용할지 선택한 뒤 <b>설정 저장</b>을 누릅니다.</li>
+<li>순위를 지정하려면 <b>채널 순위 설정…</b>을 엽니다. 채널 옆 입력 칸을 클릭해 순위를 입력하고, 보고서에 적용할지 선택한 뒤 <b>설정 저장</b>을 누릅니다.</li>
 <li>필요하면 <b>3 CAP·DCR</b>에서 용량을 수정하거나 DCR을 입력합니다.</li>
 <li><b>4 미리보기·출력 → 미리보기 갱신</b>으로 포함될 페이지를 살핀 뒤 <b>Excel 저장…</b>을 누릅니다.</li>
 </ol>
@@ -99,7 +99,7 @@ section { margin-bottom: 24px; }
 <tbody>
 <tr><th scope="row">SPD</th><td>부품의 실제 모델 할당, Net, 활성 상태, 모델 주석의 명목 용량, 위치·회전·면·몸체 치수와 연결된 표면 패드</td><td>부분 회로와 연결 정보가 있는 텍스트 SPD를 사용합니다. 원본을 수정하지 않고 읽습니다.</td></tr>
 <tr><th scope="row">Touchstone</th><td>다중 포트 S 행렬을 변환한 자기 임피던스 |Zii|</td><td>Touchstone <b>1.x, S 파라미터, RI·MA·DB</b>, 확장자 <code>.sNp</code>, 최대 <b>1024포트</b>를 지원합니다. 2.x 키워드·혼합 모드는 지원하지 않습니다.</td></tr>
-<tr><th scope="row">DCR</th><td>사이트·채널별 직류 저항 표</td><td>한 열 붙여넣기, <code>.xlsx</code> 범위 가져오기, 표 직접 입력이 가능합니다.</td></tr>
+<tr><th scope="row">DCR</th><td>사이트·채널별 직류 저항 표</td><td>키가 포함된 표 붙여넣기·<code>.xlsx</code> 가져오기, 숫자 한 열, 표 직접 입력이 가능합니다.</td></tr>
 </tbody></table></div>
 <p>Touchstone은 <code>#</code> 옵션 행, 0 이상의 중복 없는 오름차순 주파수, 완전한 주파수별 행렬이 필요합니다. 한 행 또는 한 주파수 기록은 64MiB 이하여야 합니다. 포트 수가 커지면 행렬 계산 시간도 늘어납니다.</p>
 <p>SPD의 UTF-8 또는 CP949 식별자를 읽으며, 해독할 수 없는 식별자를 다른 문자로 바꿔 연결하지 않습니다. 한 파일을 읽지 못해도 다른 입력이 유효하면 해당 데이터로 작업할 수 있습니다. 화면 아래 로그에서 오류와 제외 사유를 확인하세요.</p>
@@ -118,7 +118,7 @@ section { margin-bottom: 24px; }
 <tr><th scope="row">번호 / 원본 포트</th><td>Touchstone의 행렬 포트 번호와 원본 설명입니다. SPD만 사용할 때 번호는 비어 있을 수 있습니다.</td></tr>
 <tr><th scope="row">SPD 포트 / SPD Net (실제 연결)</th><td>연결할 SPD 포트의 전체 이름과 대상 전원 Net. 알려진 SPD 포트 이름을 입력하면 실제 연결 Net이 채워짐.</td></tr>
 <tr><th scope="row">사이트 / 채널</th><td>예: <code>SITE2</code> / <code>POWER_A</code>. 같은 사이트·채널에는 사용할 단자를 하나만 선택합니다.</td></tr>
-<tr><th scope="row">그룹</th><td>같은 이름의 행을 한 상세 그래프에 겹쳐 표시합니다. <strong>빈 그룹은 상세 그래프를 제외</strong>합니다. 사용·요약 체크가 켜져 있으면 요약 표에는 남습니다.</td></tr>
+<tr><th scope="row">그룹</th><td>비워 두면 채널별 상세 그래프를 만들고 같은 채널의 사이트를 한 그림에 표시합니다. 여러 채널에 같은 그룹명을 지정하면 한 그래프로 묶습니다.</td></tr>
 <tr><th scope="row">보고서 표시명</th><td>보고서의 Channel 셀, 상세 그래프 제목·범례와 Excel 상세 시트 제목·탭에 사용할 이름. 직접 입력하거나 지울 수 있음. 실제 연결 Net·채널·사이트는 유지.</td></tr>
 <tr><th scope="row">상태</th><td>자동 제안·중복·원본 변경 등 연결을 확인해야 하는 이유를 표시합니다.</td></tr>
 </tbody></table></div>
@@ -130,7 +130,7 @@ section { margin-bottom: 24px; }
 <li>검색란에 사이트나 채널 이름을 입력해 후보를 좁힙니다.</li>
 <li>원본 포트·SPD 포트·Net을 비교하고, 사용하지 않을 행의 <b>사용</b> 체크를 해제합니다. <b>검색 결과 사용 / 검색 결과 제외</b>는 현재 보이는 행에 적용됩니다. 검색만으로 행이 제외되는 것은 아닙니다.</li>
 <li>남길 행의 Net·사이트·채널을 수정하고 <b>확인</b>에 체크하거나, 행을 선택한 뒤 <b>선택 행 확인</b>을 누릅니다.</li>
-<li>필요한 행을 선택해 그룹명을 입력하고 <b>그룹 적용</b>을 누릅니다. 그룹명을 비워 적용하면 해당 상세 그래프에서 빠집니다.</li>
+<li>한 그래프로 묶을 행을 선택해 그룹명을 입력하고 <b>그룹 적용</b>을 누릅니다. 채널별로 다시 나누려면 그룹명을 비워 적용할 것.</li>
 </ol>
 <p>행을 고르는 것과 <b>사용</b> 체크는 별개입니다. 여러 행은 <kbd>Ctrl</kbd> 또는 <kbd>Shift</kbd>로 선택할 수 있습니다. <b>채널 추가</b>로 직접 행을 만들고 <b>선택 행 삭제</b>로 지울 수 있습니다. 같은 Touchstone 포트를 여러 행에서 사용하거나 사이트·채널을 중복 선택하면 출력 전에 수정해야 합니다.</p>
 <p>SPD 포트·실제 연결 Net·사이트·채널을 바꾸면 <b>확인</b> 체크가 해제됩니다. 연결을 다시 검토한 뒤 확인해 주세요. 그룹·Priority·보고서 표시명만 바꾸면 기존 확인 상태를 유지합니다. 입력한 SPD 포트가 원본에 없으면 확인과 출력을 막습니다.</p>
@@ -138,9 +138,9 @@ section { margin-bottom: 24px; }
 <ol>
 <li><b>채널 순위 설정…</b>을 열고 채널 이름 옆 입력 칸을 한 번 클릭합니다. <code>1</code>, <code>2</code>처럼 숫자를 입력합니다. 같은 숫자는 동순위입니다. <kbd>Tab</kbd>을 누르면 다음 채널로, <kbd>Shift+Tab</kbd>을 누르면 이전 채널로 이동합니다.</li>
 <li>순위 없이 묶을 채널에는 <code>보조 전원</code>처럼 같은 구분명을 입력합니다. 빈칸은 미순위입니다. 한 채널에 입력한 값은 그 채널의 모든 사이트에 적용됩니다.</li>
-<li>보고서에 반영하려면 <b>PI·CAP 표에 순위·구분명 적용</b>을 체크하고 <b>설정 저장</b>을 누른 뒤 <b>미리보기 갱신</b>을 실행합니다. 체크를 꺼 둔 채로도 값을 입력하고 보관할 수 있습니다. 다음 작업에서 다시 쓰려면 프로젝트를 저장하세요.</li>
+<li>보고서에 반영하려면 <b>PI·CAP 표와 개별 채널 상세 순서에 적용</b>을 체크하고 <b>설정 저장</b>을 누른 뒤 <b>미리보기 갱신</b>을 실행합니다. 체크를 꺼 둔 채로도 값을 입력하고 보관할 수 있습니다. 다음 작업에서 다시 쓰려면 프로젝트를 저장하세요.</li>
 </ol>
-<p>PI·CAP 표에는 숫자 순위가 낮은 채널부터 표시하고, 이어서 구분명별 채널과 미순위 채널을 표시합니다. 상세 그래프의 그룹은 별도로 지정합니다.</p>
+<p>PI·CAP 표와 개별 채널의 상세 그래프·Excel 상세 시트는 숫자 순위가 낮은 채널부터 표시합니다. 이어서 구분명별 채널과 미순위 채널을 표시합니다. 직접 지정한 그룹은 해당 묶음으로 표시합니다.</p>
 <h3>Excel에서 순위·그룹·보고서 표시명 입력하기</h3>
 <ol>
 <li><b>2 채널·그룹</b>에서 대상 행의 <b>사용</b>을 체크하고 채널·사이트를 채운 뒤 <b>Excel 양식 저장…</b>을 누를 것. 양식에는 사용 중인 원래 채널명·사이트 조합만 중복 없이 저장되며, <code>priority</code>·<code>group</code>·<code>net</code>은 빈칸으로 제공.</li>
@@ -157,7 +157,7 @@ section { margin-bottom: 24px; }
 </tbody></table></div>
 <p><code>priority</code>·<code>group</code>·<code>net</code> 중 필요한 열만 남길 것. 선택 열은 하나 이상 필요하며, net만 있는 파일이나 기존 priority·group 양식도 사용 가능. <b>빈 셀·생략한 열·파일에 없는 행은 기존 값을 지우지 않음.</b> <strong class="critical">원래 채널명·사이트로 대상을 찾으므로 이 두 값을 새 표시명으로 바꾸지 말 것.</strong></p>
 <p><code>priority</code>는 양의 정수 또는 <code>보조 전원</code> 같은 구분명. 한 사이트에만 입력해도 같은 채널의 모든 사이트에 공통 적용. 사이트마다 다른 값을 입력하지 말 것. <code>group</code>·<code>net</code>은 일치하는 채널·사이트에만 적용. net의 밑줄·대소문자·앞자리 0은 표시명에 그대로 사용하며, 여러 이름으로 나누지 않음.</p>
-<p>빈칸이 아닌 <code>priority</code>를 불러오면 <b>PI·CAP 표에 순위·구분명 적용</b>이 켜짐. group·net만 불러오면 기존 적용 상태 유지. <b>수식·잘못된 값·중복 대상·같은 채널의 상충하는 순위가 있으면 전체 불러오기를 중단하며 일부만 변경하지 않음.</b> 값은 수식 없이 직접 입력할 것.</p>
+<p>빈칸이 아닌 <code>priority</code>를 불러오면 <b>PI·CAP 표와 개별 채널 상세 순서에 적용</b>이 켜짐. group·net만 불러오면 기존 적용 상태 유지. <b>수식·잘못된 값·중복 대상·같은 채널의 상충하는 순위가 있으면 전체 불러오기를 중단하며 일부만 변경하지 않음.</b> 값은 수식 없이 직접 입력할 것.</p>
 <h3>보고서 표시명 적용 범위와 삭제</h3>
 <p><code>net</code>은 <strong class="critical">보고서에 보일 이름만 변경</strong>. PI 요약·상세 표, CAP 수량 표와 DCR 표의 <b>Channel</b> 칸에 입력한 이름을 표시. 원래 채널명은 해당 셀의 메모에서 확인할 것. 여러 사이트를 한 행에 표시할 때 이름이 다르면 사이트와 이름을 함께 표시. CAP 집계와 배치도는 <b>SPD Net (실제 연결)</b>을 사용.</p>
 <div class="table-wrap"><table>
@@ -197,24 +197,24 @@ section { margin-bottom: 24px; }
 <section>
 <a name="dcr"></a>
 <h2>5. DCR 가져오기와 직접 입력</h2>
-<p>DCR 표의 표시·저장 단위는 항상 <strong>mΩ</strong>입니다. 가져올 숫자의 원래 단위를 먼저 선택합니다: <code>mΩ</code>, <code>Ω</code>, <code>µΩ</code>. 예를 들어 입력 단위 Ω에서 <code>0.003</code>을 가져오면 표에는 <code>3</code>mΩ가 됩니다. 음수, 빈 셀, 숫자가 아닌 값은 사용할 수 없습니다.</p>
-<h3>한 열을 채널에 순서대로 연결하기</h3>
+<p>DCR 표의 표시·저장 단위는 항상 <strong>mΩ</strong>입니다. 입력 단위로 <code>mΩ</code>, <code>Ω</code>, <code>µΩ</code>를 선택할 수 있습니다. Excel 머리글에 단위가 있으면 그 단위를 우선 사용하고, 없으면 선택한 입력 단위를 사용합니다. 예를 들어 <code>0.003 Ω</code>는 <code>3 mΩ</code>입니다. 값은 0 이상의 유한한 숫자여야 합니다.</p>
+<h3>Excel 표 가져오기</h3>
 <ol>
-<li><b>2 채널·그룹</b>에서 DCR을 대응시킬 사이트·채널 행을 추가하고 <b>사용</b>을 체크합니다.</li>
-<li><b>3 CAP·DCR → DCR</b>에서 입력 단위와 <b>사이트 → 채널</b> 또는 <b>채널 → 사이트</b> 순서를 고릅니다.</li>
-<li>숫자만 있는 한 열을 복사해 <b>한 열 붙여넣기</b>를 누르거나, <b>Excel 범위 가져오기</b>에서 파일·시트·범위를 고릅니다. 예: <code>B3:B6</code>. 사각 범위는 위 행부터 왼쪽→오른쪽으로 읽으므로 한 열을 권장합니다.</li>
-<li><b>DCR 대상과 순서 확인</b> 창에서 사이트·채널·변환된 mΩ 값을 확인합니다. 개수가 다르면 가져오지 않습니다.</li>
-<li>확정하면 기존 DCR 표를 새 값으로 <strong>교체</strong>합니다. 아래 표에서 각 값을 다시 수정할 수 있습니다.</li>
+<li><b>2 채널·그룹</b>에서 가져올 대상의 원래 사이트·채널을 확인합니다. DCR만 만들 때는 이 단계를 생략할 수 있습니다.</li>
+<li><b>3 CAP·DCR → DCR → Excel 표 가져오기…</b>에서 <code>.xlsx</code> 파일과 시트를 선택합니다.</li>
+<li><b>IRDrop 측정표</b>는 <code>Name</code>을 채널, <code>SITE</code>를 사이트, 마지막 <code>DCR_IRDrop[mΩ]</code> 열을 DCR로 읽습니다. 전류·전압 열은 그대로 두세요. DCR 열이 수식이면 Excel에서 계산 후 저장할 것. 파일에 저장된 계산 결과를 읽습니다.</li>
+<li>일반 측정표는 <code>Site</code>·<code>Channel</code>·<code>DCR</code> 머리글을 포함할 것. 한글 <code>사이트</code>·<code>채널</code>(또는 <code>채널명</code>)도 사용 가능. 행·열 순서는 자유이며 비고 등 추가 열은 무시합니다.</li>
+<li>채널·그룹에 선택한 대상이 있으면 각 사이트·채널의 값을 하나씩 입력할 것. 이름의 대소문자는 구분하지 않습니다. 중복·누락·알 수 없는 대상은 가져오기 전에 안내합니다.</li>
+<li><b>DCR 가져오기 확인</b> 창에서 대응한 사이트·채널과 mΩ 값을 확인합니다. 확정하면 기존 DCR 표 전체를 새 값으로 <strong>교체</strong>합니다. 취소하면 기존 표를 유지합니다.</li>
 </ol>
-<p>대상은 <b>사용</b> 체크된 사이트·채널의 중복을 제거한 목록이며, 화면 행 순서가 아니라 숫자를 고려한 이름 순서로 정렬합니다.</p>
-<div class="table-wrap"><table>
-<caption>가상 예: 사이트 2개, 채널 2개, 가져올 값 4개</caption>
-<thead><tr><th scope="col">선택 순서</th><th scope="col">값이 대응하는 대상</th></tr></thead>
-<tbody><tr><th scope="row">사이트 → 채널</th><td>SITE2/POWER_A → SITE2/POWER_B → SITE3/POWER_A → SITE3/POWER_B</td></tr><tr><th scope="row">채널 → 사이트</th><td>SITE2/POWER_A → SITE3/POWER_A → SITE2/POWER_B → SITE3/POWER_B</td></tr></tbody></table></div>
-<p>Excel 수식 셀은 저장된 계산 결과를 읽습니다. Excel에서 먼저 계산하고 저장하세요. 머리글이나 빈 칸은 범위에서 제외합니다.</p>
-<p>기존 DCR 표에 작성 중인 빈 행이 있어도 새 값을 가져올 수 있습니다. 대상 확인창에서 취소하면 기존 표를 그대로 유지합니다.</p>
+<div class="table-wrap"><table><caption>IRDrop 형식 예시 · POWER_A의 DCR은 SITE1에서 4 mΩ, SITE0에서 2 mΩ</caption>
+<thead><tr><th scope="col">Name</th><th scope="col">SITE</th><th scope="col">NominalCurrent(A)</th><th scope="col">NominalVoltage(V)</th><th scope="col">ActualVoltage(V)</th><th scope="col">DCR_IRDrop[mΩ]</th></tr></thead>
+<tbody><tr><td>POWER_A</td><td>1</td><td>0.5</td><td>1</td><td>0.998</td><td>4</td></tr><tr><td>POWER_A</td><td>0</td><td>0.5</td><td>1</td><td>0.999</td><td>2</td></tr></tbody></table></div>
+<p>채널별로 한 행을 쓰는 표도 가능합니다. <code>Channel / [mΩ]</code> 또는 <code>Channel</code> 오른쪽에 사이트명을 열 제목으로 쓰고, 각 교차 칸에 측정값을 입력할 것. <b>채널·그룹을 비워 둔 경우</b> 표에 적힌 이름을 보고서에 그대로 사용합니다.</p>
+<h3>표를 붙여넣거나 숫자 한 열로 가져오기</h3>
+<p>Excel에서 사이트·채널·DCR 머리글이 포함된 표를 복사한 뒤 <b>붙여넣기</b>를 누르면 표의 키로 대상을 연결합니다. 기존 대상 매핑이 없어도 키가 포함된 표로 DCR만 가져올 수 있습니다. 숫자만 한 열 복사는 기존 방식으로 사용할 수 있습니다. 이때는 <b>2 채널·그룹</b>에서 대상 행을 추가하고 <b>사용</b>을 체크한 뒤, 입력 단위와 <b>사이트 → 채널</b> 또는 <b>채널 → 사이트</b> 순서를 지정합니다. 대상은 중복을 제거해 이름 순으로 정렬합니다. 복사한 값 수와 선택 대상 수가 다르면 가져오지 않습니다.</p>
 <h3>SPD·Touchstone 없이 DCR만 만들기</h3>
-<p><b>파일 읽기</b>를 생략하고 DCR의 <b>행 추가</b>로 사이트·채널·DCR(mΩ)을 직접 입력하면 됩니다. 같은 사이트·채널의 DCR은 하나만 둘 수 있습니다. 한 열 가져오기를 쓰려면 먼저 <b>채널 추가</b>로 대응할 사이트·채널을 만든 다음 위 절차를 따릅니다. <b>선택 행 삭제</b>는 선택한 DCR 행을 지웁니다.</p>
+<p><b>파일 읽기</b>를 생략하고 키가 포함된 표를 <b>붙여넣기</b> 또는 <b>Excel 표 가져오기…</b>로 가져오거나, DCR의 <b>행 추가</b>로 사이트·채널·DCR(mΩ)을 직접 입력하면 됩니다. 숫자 한 열 방식은 먼저 <b>채널 추가</b>로 대응할 사이트·채널을 만든 다음 사용하세요. 같은 사이트·채널의 DCR은 하나만 둘 수 있습니다.</p>
 </section>
 <section>
 <a name="output"></a>
@@ -233,7 +233,7 @@ section { margin-bottom: 24px; }
 <tr><th scope="row">DCR</th><td>유효한 DCR 입력이 있을 때.</td></tr>
 <tr><th scope="row">CAP_수량</th><td>선택한 채널에 집계할 활성 CAP가 있을 때. 용량·사이트·채널별 수량입니다.</td></tr>
 <tr><th scope="row">CAP_배치도면</th><td>SPD 입력이 있으면 PCB·MLO 모두 Top과 Bottom을 각각 별도 그림으로 첨부합니다.</td></tr>
-<tr><th scope="row">그룹별 상세</th><td>그룹명이 있고 유효한 Touchstone 데이터가 있을 때. 선택한 곡선과 기준 주파수 표를 함께 표시합니다.</td></tr>
+<tr><th scope="row">채널·그룹별 상세</th><td>유효한 Touchstone 데이터가 있을 때. 개별 채널 또는 지정한 그룹의 곡선과 기준 주파수 표를 함께 표시합니다.</td></tr>
 </tbody></table></div>
 <p>데이터가 없는 페이지는 만들지 않으며, 아래 로그에 <b>제외 · 페이지명: 사유</b>가 표시됩니다. 부분 보고서는 정상 동작입니다. 빈 페이지를 성공한 결과처럼 채우지 않습니다. 모든 페이지에 유효한 데이터가 없으면 입력을 보완해야 합니다.</p>
 <p><b>Excel 저장…</b>으로 <code>.xlsx</code>를 저장합니다. <b>현재 그림 저장…</b>은 목록에서 선택한 그림을 PNG로 저장합니다. 표가 선택되어 있다면 먼저 그림 항목을 고르세요. PNG에는 미리보기 위젯의 화면 크기가 아니라 생성된 원본 그림이 저장됩니다.</p>
@@ -293,9 +293,9 @@ section { margin-bottom: 24px; }
 <h3>기존 보고서와 CAP 용량·수량이 다름</h3>
 <p>원본 설계·모델 할당의 Revision, Disabled 포함 여부, NULL·빈 모델 여부와 수동 수정값을 비교하세요. 예를 들어 과거 보고서는 220nF로 적혀 있어도 현재 할당 모델 주석이 2.2uF일 수 있습니다. 프로그램은 기존 보고서의 숫자에 맞추려고 현재 원본 값을 바꾸지 않습니다. 의도한 명목 용량을 확인한 뒤 수정값을 적용하세요.</p>
 <h3>PI 표가 비거나 일부 페이지가 없음</h3>
-<p>Touchstone을 읽었는지, 사용·요약·확인이 켜져 있는지, 기준 주파수가 입력 범위에 들어가는지 확인합니다. 상세 그래프는 그룹명도 필요합니다. 하단 로그에 포함·제외 페이지와 계산 실패 사유가 표시됩니다.</p>
+<p>Touchstone을 읽었는지, 사용·요약·확인이 켜져 있는지, 기준 주파수가 입력 범위에 들어가는지 확인합니다. 하단 로그에 포함·제외 페이지와 계산 실패 사유가 표시됩니다.</p>
 <h3>DCR 개수가 맞지 않음</h3>
-<p>사용 체크된 사이트·채널 수와 숫자 셀 개수를 비교합니다. 머리글·빈 칸을 빼고 순서를 고른 뒤, 대응 확인 창의 각 행을 검토하세요. 기존 DCR에 덧붙이는 작업이 아니라 전체 교체입니다.</p>
+<p>전체 표는 머리글과 누락·중복된 사이트·채널을 확인할 것. 숫자 한 열만 붙여넣을 때는 머리글을 제외하고 선택한 대상 수와 순서를 확인하세요.</p>
 <h3>저장할 수 없음</h3>
 <p>대상 Excel 파일이 다른 프로그램에서 열려 있는지, 폴더에 저장할 수 있는지 확인합니다. 입력 파일을 출력 경로로 선택하지 마세요. 입력과 연결을 수정했다면 미리보기를 다시 갱신한 뒤 저장하세요.</p>
 <p class="top-link"><a href="#top">문서 처음으로 ↑</a></p>
@@ -318,6 +318,6 @@ section { margin-bottom: 24px; }
 </section>
 </div>
 </main>
-<footer><p>SPD Report Generator v0.1.11 · Copyright © 2026 yunhyok · MIT License<br>사용한 라이브러리의 라이선스는 동봉된 <a href="THIRD_PARTY_NOTICES.txt">THIRD_PARTY_NOTICES.txt</a>를 참고하세요.</p></footer>
+<footer><p>SPD Report Generator v0.1.12 · Copyright © 2026 yunhyok · MIT License<br>사용한 라이브러리의 라이선스는 동봉된 <a href="THIRD_PARTY_NOTICES.txt">THIRD_PARTY_NOTICES.txt</a>를 참고하세요.</p></footer>
 </body>
 </html>

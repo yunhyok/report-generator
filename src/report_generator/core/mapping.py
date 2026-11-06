@@ -23,6 +23,10 @@ def priority_value(text: str) -> int | str | None:
     raise ValueError("순위는 1 이상의 정수로, 별도 구분은 이름으로 입력하세요.")
 
 
+def plot_group(mapping: ChannelMapping) -> str:
+    return mapping.group or mapping.channel
+
+
 def group_presentation(group: str, mappings: list[ChannelMapping]) -> tuple[str, bool]:
     names = {mapping.display_name.strip() for mapping in mappings}
     if len(names) == 1 and "" not in names:

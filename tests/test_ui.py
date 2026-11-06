@@ -2,7 +2,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QMessageBox
 from PySide6.QtCore import Qt
 
 from report_generator.core.models import ChannelMapping, Component, DcrRow, Port, ReportConfig, SpiceModel, SpdData
@@ -137,12 +137,16 @@ def test_dcr_replacement_ignores_incomplete_old_rows_and_preserves_cancel(window
     window.fill_dcr()
     window.add_dcr()
     old_table = [[window.dcr_table.item(row, col).text() for col in range(3)] for row in range(2)]
+    window.config.dcr_source_path = "old.xlsx"
     monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Accepted if accepted else QDialog.DialogCode.Rejected)
-    assert window.confirm_dcr([2.5]) == accepted
+    QApplication.clipboard().setText("2.5")
+    window.paste_dcr()
     if accepted:
+        assert window.config.dcr_source_path == ""
         assert window.config.dcr == [DcrRow("SITE2", "RAIL", 2.5)]
         assert window.dcr_table.rowCount() == 1
     else:
+        assert window.config.dcr_source_path == "old.xlsx"
         assert window.config.dcr == old_rows
         assert [[window.dcr_table.item(row, col).text() for col in range(3)] for row in range(2)] == old_table
 
@@ -177,17 +181,50 @@ def test_cap_model_table_shows_only_models_assigned_to_cap_components(window):
     assert window.config.model_overrides == {"DUT_OTHER": 2.2e-6}
 
 
-@pytest.mark.parametrize("values", [[-1], [float("inf")], [1, 2]])
-def test_bad_dcr_replacement_preserves_prior_data(window, monkeypatch, values):
+@pytest.mark.parametrize("text", ["-1", "inf", "1\n2"])
+def test_bad_dcr_replacement_preserves_prior_data(window, monkeypatch, text):
     window.config.mappings = [ChannelMapping(site="SITE2", channel="RAIL")]
     window.fill_mappings()
     window.config.dcr = [DcrRow("SITE1", "OLD", 4.2)]
     window.fill_dcr()
     monkeypatch.setattr(QDialog, "exec", lambda self: pytest.fail("Invalid replacement must not reach confirmation"))
-    with pytest.raises(ValueError):
-        window.confirm_dcr(values)
+    errors = []
+    monkeypatch.setattr(window, "error", errors.append)
+    QApplication.clipboard().setText(text)
+    window.paste_dcr()
+    assert errors
     assert window.config.dcr == [DcrRow("SITE1", "OLD", 4.2)]
     assert window.dcr_table.item(0, 2).text() == "4.2"
+
+
+@pytest.mark.parametrize("clipboard", [False, True])
+def test_dcr_import_matches_labels_from_chosen_sheet_or_clipboard(window, monkeypatch, tmp_path, clipboard):
+    from openpyxl import Workbook
+    window.config.mappings = [ChannelMapping(site=site, channel=channel)
+                              for site in ("SITE1", "SITE2") for channel in ("A", "B")]
+    window.fill_mappings()
+    window.dcr_order.setCurrentIndex(1)
+    rows = [("DCR (mΩ)", "Site", "Channel"), (42, "SITE2", "B"), (11, "SITE1", "A"),
+            (21, "SITE2", "A"), (12, "SITE1", "B")]
+    path = tmp_path / "measurements.xlsx"
+    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(window, "error", lambda error: pytest.fail(str(error)))
+    if clipboard:
+        QApplication.clipboard().setText("\n".join("\t".join(map(str, row)) for row in rows))
+        window.paste_dcr()
+    else:
+        book = Workbook()
+        sheet = book.create_sheet("DCR")
+        for row in rows:
+            sheet.append(row)
+        book.save(path)
+        book.close()
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(path), ""))
+        monkeypatch.setattr(QInputDialog, "getItem", lambda parent, title, label, names, current, edit: (names[current], True))
+        window.import_dcr()
+    assert {(row.site, row.channel): row.resistance_mohm for row in window.collect_config().dcr} == {
+        ("SITE1", "A"): 11, ("SITE1", "B"): 12, ("SITE2", "A"): 21, ("SITE2", "B"): 42}
+    assert window.config.dcr_source_path == ("" if clipboard else str(path.resolve()))
 
 
 def test_report_validation_receives_loaded_spd(window, monkeypatch):

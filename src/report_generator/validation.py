@@ -21,7 +21,7 @@ for _variable in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"):
 
 from . import __version__
 from .core.capacitance import parse_capacitance, summarize_caps
-from .core.mapping import validate_mappings
+from .core.mapping import plot_group, validate_mappings
 from .core.models import CancelledError, checkpoint, source_signature
 from .core.project import load_project, validate_config
 from .core.report import FREQUENCIES, FREQUENCY_LABELS, build_report
@@ -219,7 +219,7 @@ def _expected(config, spd, ts, omitted):
                     values["PI"][key] = item
                     if frequency == 1e8:
                         values["PI100"][key] = item
-                if mapping.group and f"그룹: {mapping.group}" not in omitted:
+                if f"그룹: {plot_group(mapping)}" not in omitted:
                     values["PI_DETAIL"][key] = item
     if spd:
         for row in summarize_caps(spd, config):

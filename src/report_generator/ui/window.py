@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from .. import __version__
 from ..core.channel_settings import read_channel_settings, write_channel_template
-from ..core.dcr import assign_column, parse_column, read_range
+from ..core.dcr import assign_column, numeric_value, parse_column, parse_dcr_table, read_dcr_sheet
 from ..core.mapping import priority_value
 from ..core.models import ChannelMapping, DcrRow, ReportConfig, ReportSettings
 from ..core.project import load_project, save_project, validate_config
@@ -82,7 +82,7 @@ class PriorityDialog(QDialog):
         self.priorities = {}
         self.edited_rows = set()
         layout = QVBoxLayout(self)
-        self.enabled = QCheckBox("PI·CAP 표에 순위·구분명 적용")
+        self.enabled = QCheckBox("PI·CAP 표와 개별 채널 상세 순서에 적용")
         self.enabled.setChecked(enabled)
         self.enabled.setStyleSheet("""
             QCheckBox::indicator:unchecked {
@@ -137,7 +137,7 @@ class PriorityDialog(QDialog):
         self.error_label.setWordWrap(True)
         self.error_label.setStyleSheet("color: #8fc1ff;")
         layout.addWidget(self.error_label)
-        preservation = QLabel("같은 채널의 모든 사이트에 저장합니다. 그래프 그룹과는 별도입니다. 아래 체크를 꺼도 입력값은 초안으로 저장합니다.")
+        preservation = QLabel("같은 채널의 모든 사이트에 저장합니다. 개별 채널의 그래프와 상세 시트도 이 순서로 표시합니다. 아래 체크를 꺼도 입력값은 초안으로 저장합니다.")
         preservation.setWordWrap(True)
         preservation.setProperty("muted", True)
         layout.addWidget(preservation)
@@ -232,7 +232,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(root)
         layout.addWidget(self.tabs, 1)
         status_row = QHBoxLayout()
-        self.status = QLabel("SPD·Touchstone 파일을 선택하세요. DCR만 입력할 때는 채널을 추가하세요.")
+        self.status = QLabel("SPD·Touchstone 파일을 선택하거나 CAP·DCR 탭에서 DCR 표를 입력하세요.")
         self.status.setWordWrap(True)
         self.progress = QProgressBar()
         self.progress.setMaximumWidth(210)
@@ -311,7 +311,7 @@ class MainWindow(QMainWindow):
         ):
             form.addRow(label, widget)
         layout.addLayout(form)
-        self.input_summary = QLabel("파일 읽기 → 채널·그룹 확인 → (선택) 채널 순위 설정 → 미리보기·Excel 저장. 파일 없이 DCR만 입력할 때는 채널을 추가하세요.")
+        self.input_summary = QLabel("파일 읽기 → 채널·그룹 확인 → (선택) 채널 순위 설정 → 미리보기·Excel 저장. DCR만 입력할 때는 CAP·DCR 탭에서 시작하세요.")
         self.input_summary.setWordWrap(True)
         layout.addWidget(self.input_summary)
         layout.addStretch()
@@ -320,7 +320,7 @@ class MainWindow(QMainWindow):
     def mapping_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        note = QLabel("Excel(.xlsx) 1개를 끌어 놓거나 불러오세요. net: 보고서 표시명(실제 연결 유지), priority: 순위·구분명, group: 한 그래프로 묶기(빈 그룹은 상세 제외). 빈칸 유지 · priority 입력 시 PI·CAP 순위 사용.")
+        note = QLabel("Excel(.xlsx) 1개를 끌어 놓거나 불러오세요. net: 보고서 표시명(실제 연결 유지), priority: 순위·구분명, group: 한 그래프로 묶기(비워 두면 채널별 그래프). 빈칸 유지 · priority 입력 시 채널 순위 사용.")
         note.setWordWrap(True)
         layout.addWidget(note)
         row = QHBoxLayout()
@@ -328,7 +328,7 @@ class MainWindow(QMainWindow):
         self.channel_template_button = button("Excel 양식 저장…", self.export_channel_template)
         self.channel_import_button = button("Excel 설정 불러오기…", self.import_channel_settings)
         self.channel_template_button.setToolTip("검색과 관계없이 사용 체크된 채널·사이트를 저장합니다. priority·group·net은 비워 둡니다.")
-        self.channel_import_button.setToolTip("원래 채널명·사이트로 찾아 적용합니다. net은 보고서 표시명이며 실제 연결은 유지합니다.\n빈칸은 유지하며 priority 입력 시 PI·CAP 우선순위를 켭니다. Excel(.xlsx) 1개를 이 화면에 끌어 놓아도 됩니다.")
+        self.channel_import_button.setToolTip("원래 채널명·사이트로 찾아 적용합니다. net은 보고서 표시명이며 실제 연결은 유지합니다.\n빈칸은 유지하며 priority 입력 시 채널 우선순위를 켭니다. Excel(.xlsx) 1개를 이 화면에 끌어 놓아도 됩니다.")
         self.priority_status = QLabel()
         self.priority_status.setWordWrap(False)
         self.priority_status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
@@ -429,7 +429,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(cap, "CAP")
         dcr = QWidget()
         dcr_layout = QVBoxLayout(dcr)
-        dcr_note = QLabel("한 열을 가져오면 선택한 채널에 순서대로 대응합니다. 아래 표에서 사이트·채널·값을 확인하고 수정하세요. 표시값은 항상 mΩ입니다.")
+        dcr_note = QLabel("Excel 파일이나 복사한 표에서 사이트·채널 이름으로 DCR을 찾습니다. 붙여넣을 때는 머리글을 포함하세요. 숫자 한 열만 붙여넣을 때는 아래 순서를 따릅니다.")
         dcr_note.setWordWrap(True)
         dcr_layout.addWidget(dcr_note)
         row = QHBoxLayout()
@@ -439,9 +439,10 @@ class MainWindow(QMainWindow):
         self.dcr_order.addItems(["사이트 → 채널", "채널 → 사이트"])
         row.addWidget(QLabel("입력 단위"))
         row.addWidget(self.dcr_unit)
+        row.addWidget(QLabel("한 열 입력 순서"))
         row.addWidget(self.dcr_order)
-        row.addWidget(button("한 열 붙여넣기", self.paste_dcr))
-        row.addWidget(button("Excel 범위 가져오기", self.import_dcr))
+        row.addWidget(button("붙여넣기", self.paste_dcr))
+        row.addWidget(button("Excel 표 가져오기…", self.import_dcr))
         row.addStretch()
         dcr_layout.addLayout(row)
         row = QHBoxLayout()
@@ -480,6 +481,7 @@ class MainWindow(QMainWindow):
         scroll.setWidget(self.preview_image)
         self.preview_tabs.addTab(scroll, "그림")
         self.preview_table = QTextBrowser()
+        self.preview_table.setStyleSheet("QTextBrowser { background-color: white; color: #222; selection-background-color: #345d8c; selection-color: white; }")
         self.preview_tabs.addTab(self.preview_table, "표 · 앞 40행")
         layout.addWidget(self.preview_tabs, 1)
         return page
@@ -534,7 +536,7 @@ class MainWindow(QMainWindow):
                 if not any(values):
                     continue
                 try:
-                    config.dcr.append(DcrRow(values[0], values[1], float(values[2].replace(",", ""))))
+                    config.dcr.append(DcrRow(values[0], values[1], numeric_value(values[2])))
                 except ValueError as exc:
                     raise ValueError(f"DCR {row+1}행 값을 확인하세요.") from exc
         validate_config(config)
@@ -554,12 +556,12 @@ class MainWindow(QMainWindow):
         self.update_priority_status()
 
     def update_priority_status(self):
-        state = "PI·CAP 순위 사용 중" if self.config.settings.use_priority else "PI·CAP 순위 사용 안 함"
+        state = "채널 순위 사용 중" if self.config.settings.use_priority else "채널 순위 사용 안 함"
         source = self.config.channel_settings_source_path
         detail = ("Excel: " + self.priority_status.fontMetrics().elidedText(Path(source).name, Qt.TextElideMode.ElideMiddle, 160)
-                  if source else "그래프 그룹과 별도" if self.config.settings.use_priority else "입력값은 초안으로 보관")
+                  if source else "개별 채널 상세 순서에 적용" if self.config.settings.use_priority else "입력값은 초안으로 보관")
         self.priority_status.setText(state + "\n" + detail)
-        self.priority_status.setToolTip(source or "PI·CAP 우선순위와 그래프 그룹은 별도입니다. 적용을 꺼도 입력값은 보관합니다.")
+        self.priority_status.setToolTip(source or "순위는 PI·CAP 표와 개별 채널의 상세 그래프·시트 순서에 적용합니다. 적용을 꺼도 입력값은 보관합니다.")
 
     def export_channel_template(self):
         path, _ = QFileDialog.getSaveFileName(self, "채널 설정 Excel 양식 저장", "channel_settings.xlsx", "Excel (*.xlsx)")
@@ -612,7 +614,7 @@ class MainWindow(QMainWindow):
             self.update_priority_status()
             if changed:
                 self.clear_preview()
-            mode = "PI·CAP 순위 사용 중" if self.config.settings.use_priority else "PI·CAP 순위 사용 안 함 유지"
+            mode = "채널 순위 사용 중" if self.config.settings.use_priority else "채널 순위 사용 안 함 유지"
             self.status.setText(f"Excel 적용: 순위 {len(priorities)}채널 · 그룹 {len(groups)}개 · 표시명 {len(nets)}개. {mode}. "
                                 + ("미리보기를 갱신하세요." if changed else "기존 값과 같습니다."))
         except Exception as exc:
@@ -648,7 +650,7 @@ class MainWindow(QMainWindow):
             if was_enabled or self.config.settings.use_priority:
                 self.status.setText("채널 우선순위 설정을 저장했습니다. 미리보기를 갱신하세요.")
             else:
-                self.status.setText("채널 우선순위 초안을 저장했습니다. PI·CAP에는 미적용입니다. 미리보기를 갱신하세요.")
+                self.status.setText("채널 우선순위 초안을 저장했습니다. 보고서에는 미적용입니다. 미리보기를 갱신하세요.")
 
     def mapping_edited(self, item):
         if self.loading_table:
@@ -798,16 +800,14 @@ class MainWindow(QMainWindow):
         for row in reversed(self.selected_rows(self.dcr_table)):
             self.dcr_table.removeRow(row)
 
-    def confirm_dcr(self, values):
-        config = self.collect_config(dcr=[])
-        rows = assign_column(values, config.mappings, "site" if self.dcr_order.currentIndex() == 0 else "channel")
-        config.dcr = rows
-        validate_config(config)
+    def confirm_dcr(self, rows, source_path=""):
+        config = self.collect_config(dcr=rows)
+        config.dcr_source_path = source_path
         dialog = QDialog(self)
-        dialog.setWindowTitle("DCR 대상과 순서 확인")
+        dialog.setWindowTitle("DCR 가져오기 확인")
         dialog.resize(650, 500)
         layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("확인하면 기존 DCR 표를 이 값으로 교체합니다."))
+        layout.addWidget(QLabel(f"사이트·채널과 값을 확인하세요. 확인을 누르면 기존 DCR 표를 아래 {len(rows)}개 값으로 교체합니다."))
         table = make_table(["사이트", "채널", "DCR (mΩ)"])
         table.setRowCount(len(rows))
         for index, row in enumerate(rows):
@@ -821,13 +821,19 @@ class MainWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.config = config
             self.fill_dcr()
-            return True
-        return False
+            self.clear_preview()
 
     def paste_dcr(self):
         try:
-            if self.confirm_dcr(parse_column(QApplication.clipboard().text(), self.dcr_unit.currentText())):
-                self.config.dcr_source_path = ""
+            text = QApplication.clipboard().text()
+            unit = self.dcr_unit.currentText()
+            mappings = self.collect_mappings()
+            if "\t" in text:
+                rows = parse_dcr_table(text, mappings, unit)
+            else:
+                order = "site" if self.dcr_order.currentIndex() == 0 else "channel"
+                rows = assign_column(parse_column(text, unit), mappings, order)
+            self.confirm_dcr(rows)
         except ValueError as exc:
             self.error(exc)
 
@@ -838,15 +844,19 @@ class MainWindow(QMainWindow):
         try:
             from openpyxl import load_workbook
             book = load_workbook(path, read_only=True)
-            names = book.sheetnames
-            book.close()
-            sheet, ok = QInputDialog.getItem(self, "DCR 시트", "시트", names, 0, False)
-            if not ok:
-                return
-            cells, ok = QInputDialog.getText(self, "DCR 범위", "숫자만 있는 범위 (행 우선으로 읽음)", text="B2:B10")
-            if ok:
-                if self.confirm_dcr(read_range(path, sheet, cells.strip(), self.dcr_unit.currentText())):
-                    self.config.dcr_source_path = str(Path(path).resolve())
+            try:
+                names = [ws.title for ws in book.worksheets]
+            finally:
+                book.close()
+            if not names:
+                raise ValueError("DCR을 읽을 워크시트가 없습니다.")
+            sheet = next((name for name in names if name.casefold() == "dcr"), names[0])
+            if len(names) > 1:
+                sheet, ok = QInputDialog.getItem(self, "DCR 시트", "DCR 표가 있는 시트", names, names.index(sheet), False)
+                if not ok:
+                    return
+            rows = read_dcr_sheet(path, sheet, self.collect_mappings(), self.dcr_unit.currentText())
+            self.confirm_dcr(rows, str(Path(path).resolve()))
         except Exception as exc:
             self.error(exc)
 
