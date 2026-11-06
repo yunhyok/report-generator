@@ -2,7 +2,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QMessageBox, QTableWidget
 from PySide6.QtCore import Qt
 
 from report_generator.core.models import ChannelMapping, Component, DcrRow, Port, ReportConfig, SpiceModel, SpdData
@@ -225,6 +225,48 @@ def test_dcr_import_matches_labels_from_chosen_sheet_or_clipboard(window, monkey
     assert {(row.site, row.channel): row.resistance_mohm for row in window.collect_config().dcr} == {
         ("SITE1", "A"): 11, ("SITE1", "B"): 12, ("SITE2", "A"): 21, ("SITE2", "B"): 42}
     assert window.config.dcr_source_path == ("" if clipboard else str(path.resolve()))
+
+
+def test_dcr_priority_sorts_visible_rows_without_reassigning_values_or_losing_edits(window, monkeypatch, tmp_path):
+    def visible_rows(table):
+        return [tuple(table.item(table.verticalHeader().logicalIndex(i), col).text() for col in range(3))
+                for i in range(table.rowCount())]
+
+    window.config.settings.use_priority = True
+    window.config.mappings = [ChannelMapping(site=site, channel=ch, priority=rank)
+                              for site in ("S1", "S2") for ch, rank in (("A", "10"), ("B", "2"))]
+    window.fill_mappings()
+    expected = [("S1", "B", 12), ("S2", "B", 22), ("S1", "A", 11), ("S2", "A", 21)]
+
+    def confirm(dialog):
+        rows = visible_rows(dialog.findChild(QTableWidget))
+        assert [(s, c, float(v)) for s, c, v in rows] == expected
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(QDialog, "exec", confirm)
+    QApplication.clipboard().setText("11\n12\n21\n22")
+    window.paste_dcr()
+    table = window.dcr_table
+    assert [(s, c, float(v)) for s, c, v in visible_rows(table)] == expected
+    assert [(r.site, r.channel, r.resistance_mohm) for r in window.collect_config().dcr] == [
+        ("S1", "A", 11), ("S1", "B", 12), ("S2", "A", 21), ("S2", "B", 22)]
+
+    # Change a priority via the normal Excel settings path while a DCR cell contains unfinished text.
+    table.item(0, 2).setText("작성 중")
+    window.apply_channel_settings(channel_workbook(tmp_path, [("channel", "site", "priority"), ("A", "S1", 1)]))
+    assert visible_rows(table) == [("S1", "A", "작성 중"), ("S2", "A", "21"), ("S1", "B", "12"), ("S2", "B", "22")]
+    window.add_dcr()
+    table.item(4, 1).setText("A")
+    assert visible_rows(table)[2] == ("SITE0", "A", "")
+
+    def disable(dialog):
+        dialog.enabled.setChecked(False)
+        dialog.accept()
+        return dialog.result()
+
+    monkeypatch.setattr(PriorityDialog, "exec", disable)
+    window.edit_priorities()
+    assert [c for _, c, _ in visible_rows(table)] == ["A", "B", "A", "B", "A"]
 
 
 def test_report_validation_receives_loaded_spd(window, monkeypatch):

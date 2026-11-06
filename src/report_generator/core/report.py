@@ -18,7 +18,8 @@ from openpyxl.worksheet.views import Selection
 from .models import ReportConfig, ReportResult, SpdData, TouchstoneData, checkpoint
 from .render import PLACEMENT_SIDES, render_group_plot, render_placement
 from .capacitance import summarize_caps
-from .mapping import group_presentation, plot_group, priority_value
+from .mapping import channel_sections as _sections, group_presentation, plot_group, priority_value
+from .dcr import dcr_channel_order
 from .touchstone import interpolate_impedance, pi_display_units, plot_frequency_bounds, plot_impedance
 
 
@@ -58,21 +59,6 @@ def _priorities(config):
 
 def _channel_priorities(mappings, enabled):
     return {mapping.channel: priority_value(mapping.priority) for mapping in mappings} if enabled else {}
-
-
-def _sections(channels, priorities, enabled):
-    if not enabled:
-        return [(None, channels)]
-    ranked = sorted((channel for channel in channels if isinstance(priorities.get(channel), int)),
-                    key=lambda channel: priorities[channel])
-    names = list(dict.fromkeys(priorities[channel] for channel in channels
-                               if isinstance(priorities.get(channel), str)))
-    sections = [(None, ranked)] if ranked else []
-    sections.extend((name, [channel for channel in channels if priorities.get(channel) == name]) for name in names)
-    unranked = [channel for channel in channels if priorities.get(channel) is None]
-    if unranked:
-        sections.append((None, unranked))
-    return sections
 
 
 def _widths(ws, column, widths):
@@ -457,6 +443,7 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
 def _write_dcr(ws, rows, config):
     sites = list(dict.fromkeys(row.site for row in rows))
     channels = list(dict.fromkeys(row.channel for row in rows))
+    channels = dcr_channel_order(channels, _mappings(config), config.settings.use_priority) or channels
     labels = {channel: _channel_label(channel, _mappings(config),
                                     [row.site for row in rows if row.channel == channel]) for channel in channels}
     lookup = {}

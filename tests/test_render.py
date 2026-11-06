@@ -7,6 +7,7 @@ import pytest
 from report_generator.core.models import (ChannelMapping, Component, PadShape, Port, ReportConfig,
     SpiceModel, SpdData, SurfacePad, TouchstoneData)
 from report_generator.core import render
+from report_generator.core.capacitance import summarize_caps
 from report_generator.core.touchstone import (
     PLOT_POINTS_PER_DECADE, interpolate_impedance, plot_frequency_bounds, plot_impedance,
 )
@@ -296,36 +297,48 @@ def test_cad_placement_context_is_outline_and_cap_colors_follow_reference(tmp_pa
     filled = np.concatenate([colors for colors in captured["faces"] if len(colors)])
     assert any(np.allclose(color, (1, 0, 0, 1)) for color in filled)
     assert any(np.allclose(color, (146/255, 208/255, 80/255, 1)) for color in filled)
-    assert captured["labels"] == ["100nF (1)", "1uF (1)"]
+    assert captured["labels"] == ["100nF", "1uF"]
 
 
-def test_capacity_legend_counts_only_visible_active_caps_on_each_side(tmp_path, monkeypatch):
-    def cap(refdes, model="SMALL", status="Automatic", side="Top", net="RAIL", visible=True):
-        return Component(refdes, model, [net, "GND"], status=status, side=side,
-                         x_mm=int(refdes[1:]) if visible else None, y_mm=0 if visible else None,
-                         width_mm=1, height_mm=.5, is_cap=True)
-    spd = SpdData("synthetic.spd", {}, models={"SMALL": SpiceModel("SMALL", 100e-9, valid=False)}, components=[
-        cap("C2"), cap("C3", status="Enabled"), cap("C4", model="NULL"),
-        cap("C5", status="Disabled"), cap("C6", status="Unknown"),
-        cap("C7", side="Bottom"), cap("C8", model="NULL", side="Bottom"),
-        cap("C9", net="OTHER"), cap("C10", visible=False),
-        Component("U2", "IC", x_mm=0, y_mm=0, width_mm=10, height_mm=2),
-    ])
-    pad_only_cap = cap("C11", visible=False)
-    pad_only_cap.pads = [SurfacePad(node, x, 2, "Bottom", PadShape("Circle", .5, .5))
-                         for node, x in (("Node11", 11), ("Node12", 12))]
-    spd.components.append(pad_only_cap)
-    config = ReportConfig(mappings=[ChannelMapping(net="RAIL", site="SITE2", channel="RAIL")], component_overrides={"C5": 1e-6})
-    captured = {}
+@pytest.mark.parametrize("side", ["Top", "Bottom"])
+def test_placement_treats_mixed_status_caps_as_populated_without_legend_counts(tmp_path, monkeypatch, side):
+    def components(statuses):
+        return [
+            Component("C1", "SMALL", ["RAIL", "GND"], status=statuses[0], side=side,
+                      x_mm=0, y_mm=0, width_mm=1, height_mm=.5, is_cap=True),
+            Component("C2", "UNKNOWN", ["RAIL", "GND"], status=statuses[1], side=side,
+                      x_mm=2, y_mm=0, is_cap=True),
+            Component("C3", "UNKNOWN", ["RAIL", "GND"], status=statuses[2], side=side,
+                      pads=[SurfacePad("Node3", 4, 0, side, PadShape("Circle", .5, .5))], is_cap=True),
+            Component("U1", "IC", ["OTHER"], side=side, x_mm=6, y_mm=0, width_mm=1, height_mm=1),
+        ]
+
+    spd = SpdData("synthetic.spd", {}, models={"SMALL": SpiceModel("SMALL", 100e-9, valid=False)})
+    config = ReportConfig(mappings=[ChannelMapping(net="RAIL", site="SITE2", channel="RAIL")])
     original = render.FigureCanvasAgg.print_png
+    legends = []
+
     def capture(canvas, filename, *args, **kwargs):
-        captured["labels"] = [text.get_text() for legend in canvas.figure.legends for text in legend.get_texts()]
+        legends.append([text.get_text() for legend in canvas.figure.legends for text in legend.get_texts()])
         return original(canvas, filename, *args, **kwargs)
+
     monkeypatch.setattr(render.FigureCanvasAgg, "print_png", capture)
-    render.render_placement(spd, config, "Top", tmp_path / "top-counts.png")
-    assert set(captured["labels"]) == {"100nF (2)", "Unknown capacitance (1)", "Inactive (2)"}
-    render.render_placement(spd, config, "Bottom", tmp_path / "bottom-counts.png")
-    assert {"100nF (2)", "Unknown capacitance (1)"}.issubset(captured["labels"])
+    for label, statuses in (("all-automatic", ("Automatic",) * 3),
+                            ("mixed", ("Enabled", "Disabled", "Unknown"))):
+        spd.components = components(statuses)
+        path = tmp_path / f"placement-{side.lower()}-{label}.png"
+        render.render_placement(spd, config, side, path)
+        with Image.open(path) as image:
+            if label == "all-automatic":
+                expected_pixels = image.convert("RGBA").tobytes()
+                expected_size = image.size
+            else:
+                assert image.size == expected_size
+                assert image.convert("RGBA").tobytes() == expected_pixels
+
+    assert legends == [["100nF", "Unknown capacitance", "Unknown dimensions", "Pin bounds"]] * 2
+    spd.components = components(("Enabled", "Disabled", "Unknown"))
+    assert [(row["capacitance_f"], row["count"]) for row in summarize_caps(spd, config)] == [(100e-9, 1)]
 
 
 def test_alias_placement_selection_and_invalid_side(tmp_path):
@@ -557,7 +570,7 @@ def test_surface_pad_geometry_without_body_and_bottom_mirror(tmp_path, monkeypat
     render.render_placement(spd, config, "Top", tmp_path / "pins-top.png")
     expected = np.array([[10.5, 19], [10.5, 21], [9.5, 21], [9.5, 19]])
     assert captured["paths"][-1][:4] == pytest.approx(expected)
-    assert "Pin bounds (1)" in captured["legend"]
+    assert "Pin bounds" in captured["legend"]
     render.render_placement(spd, config, "Bottom", tmp_path / "pins-bottom.png")
     assert captured["limits"][0] > captured["limits"][1]
     assert captured["bounds"] == pytest.approx((2.75, 3.75, .5, .5))

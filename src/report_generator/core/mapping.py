@@ -27,6 +27,21 @@ def plot_group(mapping: ChannelMapping) -> str:
     return mapping.group or mapping.channel
 
 
+def channel_sections(channels, priorities, enabled):
+    if not enabled:
+        return [(None, channels)]
+    ranked = sorted((channel for channel in channels if isinstance(priorities.get(channel), int)),
+                    key=lambda channel: priorities[channel])
+    names = list(dict.fromkeys(priorities[channel] for channel in channels
+                               if isinstance(priorities.get(channel), str)))
+    sections = [(None, ranked)] if ranked else []
+    sections.extend((name, [channel for channel in channels if priorities.get(channel) == name]) for name in names)
+    unranked = [channel for channel in channels if priorities.get(channel) is None]
+    if unranked:
+        sections.append((None, unranked))
+    return sections
+
+
 def group_presentation(group: str, mappings: list[ChannelMapping]) -> tuple[str, bool]:
     names = {mapping.display_name.strip() for mapping in mappings}
     if len(names) == 1 and "" not in names:

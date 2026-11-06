@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import defaultdict
 from colorsys import hsv_to_rgb
 from math import cos, radians, sin
 from pathlib import Path
@@ -15,7 +15,7 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import FuncFormatter, NullFormatter
 
 from .models import ReportConfig, SpdData, TouchstoneData
-from .capacitance import component_active, format_capacitance, resolved_capacitance
+from .capacitance import format_capacitance, resolved_capacitance
 from .mapping import group_presentation, plot_group
 from .touchstone import pi_display_units, plot_frequency_bounds, plot_impedance
 
@@ -132,9 +132,8 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
     components = placement_components(spd, config, side)
     def highlighted(c):
         return c.is_cap and (not nets or bool(nets.intersection(c.nets)))
-    counts = Counter(resolved_capacitance(c, spd, config) for c in components
-                     if highlighted(c) and component_active(c, spd))
-    known = sorted(v for v in counts if v is not None)
+    capacitances = {resolved_capacitance(c, spd, config) for c in components if highlighted(c)}
+    known = sorted(v for v in capacitances if v is not None)
     reference_colors = CAP_COLORS_PCB if config.settings.board_type.upper() == "PCB" else CAP_COLORS_MLO
     palette = {value: next((color for nominal, color in reference_colors.items() if np.isclose(value, nominal, rtol=1e-6, atol=0)),
                            COLORS[i % len(COLORS)]) for i, value in enumerate(known)}
@@ -147,15 +146,10 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
     fallback_bounds = []
     seen_pads = set()
     bounds = []
-    inactive = unknown = missing_size = 0
     for c in components:
         selected_cap = highlighted(c)
-        active = selected_cap and component_active(c, spd)
-        value = resolved_capacitance(c, spd, config) if active else None
-        color = palette.get(value, "#cf6bcc") if active else "#777777" if selected_cap else "#b8b8b8"
-        kind = "active" if active else "inactive" if selected_cap else "context"
-        inactive += selected_cap and not active
-        unknown += active and value is None
+        value = resolved_capacitance(c, spd, config) if selected_cap else None
+        color = palette.get(value, "#cf6bcc") if selected_cap else "#b8b8b8"
         x, y = c.x_mm, c.y_mm
         valid_position = c.side.capitalize() == side and x is not None and y is not None and np.isfinite(x) and np.isfinite(y)
         valid_size = (c.width_mm is not None and c.height_mm is not None and c.width_mm > 0 and c.height_mm > 0
@@ -164,7 +158,7 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
         pad_points = []
         pad_color = color if selected_cap else "#dddddd"
         pad_edge = "#dddddd"
-        if active:
+        if selected_cap:
             pad_edge = "none" if valid_position and valid_size else "#111111"
         for pad in surface_pads:
             if (pad.node, side) in seen_pads:
@@ -192,7 +186,6 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
                 fallback_bounds.append(((xmin, ymin), (xmax, ymin), (xmax, ymax), (xmin, ymax)))
             elif valid_position:
                 markers[color].append((x, y))
-                missing_size += 1
             continue
         angle = radians(c.rotation)
         vertices = []
@@ -202,9 +195,9 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
         for dx, dy in outline:
             vertices.append((x + dx * cos(angle) - dy * sin(angle),
                              y + dx * sin(angle) + dy * cos(angle)))
-        polygons[kind, color].append(vertices)
-        if active:
-            polygon_sizes[kind, color].append(min(c.width_mm, c.height_mm))
+        polygons[selected_cap, color].append(vertices)
+        if selected_cap:
+            polygon_sizes[color].append(min(c.width_mm, c.height_mm))
         bounds.extend(vertices)
     has_coordinates = bool(bounds)
     outline_segments = [line for line in spd.outlines if len(line) >= 2]
@@ -217,9 +210,9 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
     fig = Figure(figsize=(width, 9), dpi=110, facecolor="black")
     ax = fig.add_subplot(111, facecolor="black")
     cap_edges = []
-    for (kind, color), verts in sorted(polygons.items(), key=lambda item: item[0][0] == "active"):
-        ax.add_collection(PolyCollection(verts, facecolors=color if kind == "active" else "none",
-                                        edgecolors="none" if kind == "active" else color,
+    for (selected_cap, color), verts in sorted(polygons.items(), key=lambda item: item[0][0]):
+        ax.add_collection(PolyCollection(verts, facecolors=color if selected_cap else "none",
+                                        edgecolors="none" if selected_cap else color,
                                         linewidths=.45))
     if fallback_bounds:
         ax.add_collection(PolyCollection(fallback_bounds, facecolors="none", edgecolors="#999999", linewidths=.35, linestyles="dashed"))
@@ -240,11 +233,11 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
         points = np.asarray(positions)
         ax.scatter(points[:, 0], points[:, 1], s=10, marker="x", c=color, linewidths=.65)
     # Draw actual CAP perimeters after pads so same-color pad fills cannot hide them.
-    for (kind, color), verts in polygons.items():
-        if kind == "active":
+    for (selected_cap, color), verts in polygons.items():
+        if selected_cap:
             collection = PolyCollection(verts, facecolors="none", edgecolors="#111111", zorder=3)
             ax.add_collection(collection)
-            cap_edges.append((collection, .8, polygon_sizes[kind, color]))
+            cap_edges.append((collection, .8, polygon_sizes[color]))
     if outline_segments:
         ax.add_collection(LineCollection(outline_segments, colors="#eeeeee", linewidths=.8))
         bounds.extend(point for line in outline_segments for point in line)
@@ -263,16 +256,14 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
         fig.text(.5, .11 if outline_segments else .5, "No displayable component / pad coordinates",
                  fontproperties=FontProperties(family="Malgun Gothic", size=10),
                  color="#eeeeee", ha="center", va="center")
-    handles = [Line2D([], [], color=color, marker="s", linestyle="none", label=f"{format_capacitance(v)} ({counts[v]})")
+    handles = [Line2D([], [], color=color, marker="s", linestyle="none", label=format_capacitance(v))
                for v, color in palette.items()]
-    if inactive:
-        handles.append(Line2D([], [], color="#777777", marker="s", markerfacecolor="none", linestyle="none", label=f"Inactive ({inactive})"))
-    if unknown:
-        handles.append(Line2D([], [], color="#cf6bcc", marker="s", linestyle="none", label=f"Unknown capacitance ({unknown})"))
-    if missing_size:
-        handles.append(Line2D([], [], color="#eeeeee", marker="x", linestyle="none", label=f"Unknown dimensions ({missing_size})"))
+    if None in capacitances:
+        handles.append(Line2D([], [], color="#cf6bcc", marker="s", linestyle="none", label="Unknown capacitance"))
+    if markers:
+        handles.append(Line2D([], [], color="#eeeeee", marker="x", linestyle="none", label="Unknown dimensions"))
     if fallback_bounds:
-        handles.append(Line2D([], [], color="#999999", linestyle="dashed", label=f"Pin bounds ({len(fallback_bounds)})"))
+        handles.append(Line2D([], [], color="#999999", linestyle="dashed", label="Pin bounds"))
     if handles:
         fig.legend(handles=handles, loc="lower center", ncol=2 if width < 8 else 3,
                    prop=FontProperties(family="Malgun Gothic", size=10),

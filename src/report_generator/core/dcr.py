@@ -9,11 +9,34 @@ from pathlib import Path
 from openpyxl import load_workbook
 from openpyxl.utils.cell import range_boundaries
 
+from .mapping import channel_sections, priority_value
 from .models import ChannelMapping, DcrRow
 
 
 _EXCEL_ERROR = object()
 _UNCACHED_FORMULA = object()
+
+
+def dcr_channel_order(channels, mappings: list[ChannelMapping], enabled: bool) -> list[str]:
+    """Order original keys; return [] when disabled or no channel has a usable rank/section."""
+    channels = list(dict.fromkeys(channels))
+    if not enabled:
+        return []
+    ranks = {}
+    for mapping in mappings:
+        key = mapping.channel.strip().casefold()
+        if not mapping.selected or not key:
+            continue
+        try:
+            rank = priority_value(mapping.priority)
+        except ValueError:
+            rank = None
+        ranks.setdefault(key, set()).add(rank)
+    priorities = {key: next(iter(values)) if len(values) == 1 else None for key, values in ranks.items()}
+    priorities = {channel: priorities.get(channel.strip().casefold()) for channel in channels}
+    if not any(rank is not None for rank in priorities.values()):
+        return []
+    return [channel for _, section in channel_sections(channels, priorities, enabled) for channel in section]
 
 
 def natural_key(value: str) -> list:

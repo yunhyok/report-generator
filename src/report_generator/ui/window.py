@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from .. import __version__
 from ..core.channel_settings import read_channel_settings, write_channel_template
-from ..core.dcr import assign_column, numeric_value, parse_column, parse_dcr_table, read_dcr_sheet
+from ..core.dcr import assign_column, dcr_channel_order, numeric_value, parse_column, parse_dcr_table, read_dcr_sheet
 from ..core.mapping import priority_value
 from ..core.models import ChannelMapping, DcrRow, ReportConfig, ReportSettings
 from ..core.project import load_project, save_project, validate_config
@@ -82,7 +82,7 @@ class PriorityDialog(QDialog):
         self.priorities = {}
         self.edited_rows = set()
         layout = QVBoxLayout(self)
-        self.enabled = QCheckBox("PI·CAP 표와 개별 채널 상세 순서에 적용")
+        self.enabled = QCheckBox("PI·CAP·DCR 표와 개별 채널 상세 순서에 적용")
         self.enabled.setChecked(enabled)
         self.enabled.setStyleSheet("""
             QCheckBox::indicator:unchecked {
@@ -228,6 +228,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.mapping_page(), "2  채널·그룹")
         self.tabs.addTab(self.cap_dcr_page(), "3  CAP·DCR")
         self.tabs.addTab(self.preview_page(), "4  미리보기·출력")
+        self.tabs.currentChanged.connect(lambda index: self.sort_dcr_table(self.dcr_table) if index == 2 else None)
         root = QWidget()
         layout = QVBoxLayout(root)
         layout.addWidget(self.tabs, 1)
@@ -451,6 +452,7 @@ class MainWindow(QMainWindow):
         row.addStretch()
         dcr_layout.addLayout(row)
         self.dcr_table = make_table(["사이트", "채널", "DCR (mΩ)"])
+        self.dcr_table.itemChanged.connect(lambda item: self.sort_dcr_table(self.dcr_table) if item.column() == 1 else None)
         dcr_layout.addWidget(self.dcr_table, 1)
         tabs.addTab(dcr, "DCR")
         layout.addWidget(tabs)
@@ -561,7 +563,7 @@ class MainWindow(QMainWindow):
         detail = ("Excel: " + self.priority_status.fontMetrics().elidedText(Path(source).name, Qt.TextElideMode.ElideMiddle, 160)
                   if source else "개별 채널 상세 순서에 적용" if self.config.settings.use_priority else "입력값은 초안으로 보관")
         self.priority_status.setText(state + "\n" + detail)
-        self.priority_status.setToolTip(source or "순위는 PI·CAP 표와 개별 채널의 상세 그래프·시트 순서에 적용합니다. 적용을 꺼도 입력값은 보관합니다.")
+        self.priority_status.setToolTip(source or "순위는 PI·CAP·DCR 표와 개별 채널의 상세 그래프·시트 순서에 적용합니다. 적용을 꺼도 입력값은 보관합니다.")
 
     def export_channel_template(self):
         path, _ = QFileDialog.getSaveFileName(self, "채널 설정 Excel 양식 저장", "channel_settings.xlsx", "Excel (*.xlsx)")
@@ -613,6 +615,8 @@ class MainWindow(QMainWindow):
             self.config.channel_settings_source_path = source
             self.update_priority_status()
             if changed:
+                if priorities:
+                    self.sort_dcr_table(self.dcr_table)
                 self.clear_preview()
             mode = "채널 순위 사용 중" if self.config.settings.use_priority else "채널 순위 사용 안 함 유지"
             self.status.setText(f"Excel 적용: 순위 {len(priorities)}채널 · 그룹 {len(groups)}개 · 표시명 {len(nets)}개. {mode}. "
@@ -646,6 +650,7 @@ class MainWindow(QMainWindow):
                     self.mapping_table.item(row, 10).setText(by_channel[channel])
         self.update_priority_status()
         if changed:
+            self.sort_dcr_table(self.dcr_table)
             self.clear_preview()
             if was_enabled or self.config.settings.use_priority:
                 self.status.setText("채널 우선순위 설정을 저장했습니다. 미리보기를 갱신하세요.")
@@ -784,11 +789,27 @@ class MainWindow(QMainWindow):
         with QSignalBlocker(self.component_table):
             self.component_table.item(row, 4).setText(format_capacitance(value) if value is not None else "미확인")
 
+    def sort_dcr_table(self, table):
+        header = table.verticalHeader()
+        enabled = self.config.settings.use_priority
+        if table.rowCount() < 2 or (not enabled and not header.sectionsMoved()):
+            return
+        channels = [item.text().strip() if (item := table.item(row, 1)) else "" for row in range(table.rowCount())]
+        order = dcr_channel_order(channels, self.collect_mappings(), enabled)
+        positions = {channel: index for index, channel in enumerate(order)}
+        # Move the view only. Clipboard assignment, draft edits and project data keep their original rows.
+        for visual, row in enumerate(sorted(range(len(channels)), key=lambda row: positions.get(channels[row], len(order)))):
+            current = header.visualIndex(row)
+            if current != visual:
+                header.moveSection(current, visual)
+
     def fill_dcr(self):
-        self.dcr_table.setRowCount(len(self.config.dcr))
-        for row, entry in enumerate(self.config.dcr):
-            for col, value in enumerate((entry.site, entry.channel, f"{entry.resistance_mohm:.12g}")):
-                self.dcr_table.setItem(row, col, text_item(value))
+        with QSignalBlocker(self.dcr_table):
+            self.dcr_table.setRowCount(len(self.config.dcr))
+            for row, entry in enumerate(self.config.dcr):
+                for col, value in enumerate((entry.site, entry.channel, f"{entry.resistance_mohm:.12g}")):
+                    self.dcr_table.setItem(row, col, text_item(value))
+        self.sort_dcr_table(self.dcr_table)
 
     def add_dcr(self):
         row = self.dcr_table.rowCount()
@@ -813,6 +834,7 @@ class MainWindow(QMainWindow):
         for index, row in enumerate(rows):
             for col, value in enumerate((row.site, row.channel, row.resistance_mohm)):
                 table.setItem(index, col, text_item(value, False))
+        self.sort_dcr_table(table)
         layout.addWidget(table)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept)

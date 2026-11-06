@@ -359,13 +359,7 @@ def priority_data(site_count):
     return config, spd, ts
 
 
-def dcr_snapshot(sheet):
-    return ([(c.coordinate, c.value, c.number_format, c.font.name, c.font.sz, c.font.bold)
-             for row in sheet for c in row if c.value is not None],
-            str(sheet.merged_cells), {key: value.width for key, value in sheet.column_dimensions.items()})
-
-
-def test_priority_sections_optional_notes_removed_and_dcr_unchanged(tmp_path):
+def test_priority_sections_optional_notes_removed_and_dcr_sorted(tmp_path):
     config, spd, ts = priority_data(2)
     disabled = build_report(config, spd, ts, tmp_path / "off.xlsx")
     config.settings.use_priority = True
@@ -394,11 +388,63 @@ def test_priority_sections_optional_notes_removed_and_dcr_unchanged(tmp_path):
         assert on["PI ALL"]["J5"].value == pytest.approx(1 / 3)
         assert on["CAP_수량"]["C6"].value == "FirstB" and on["CAP_수량"]["B10"].value == "Auxiliary"
         assert on["Overlay"]["Q5"].value == "FirstB" and on["Overlay"]["Q12"].value == "AuxA"
-        assert dcr_snapshot(off["DCR"]) == dcr_snapshot(on["DCR"])
+        assert [off["DCR"].cell(row, 3).value for row in range(5, 12)] == [m.channel for m in config.mappings[::2]]
+        ordered = ["FirstB", "FirstA", "Third", "AuxA", "AuxB", "Other", "Unnamed"]
+        assert [on["DCR"].cell(row, 3).value for row in range(5, 12)] == ordered
+        values = {(row.channel, row.site): row.resistance_mohm for row in config.dcr}
+        for row, channel in enumerate(ordered, 5):
+            assert [on["DCR"].cell(row, column).value for column in (4, 5)] == [
+                values[channel, site] for site in ("SITE0", "SITE1")]
         assert disabled.warnings == enabled.warnings == [*spd.warnings, *ts.warnings]
     finally:
         off.close()
         on.close()
+
+
+@pytest.mark.parametrize("site_count", [2, 9])
+@pytest.mark.parametrize("priority_mode", ["enabled", "disabled", "empty"])
+def test_dcr_priority_export_and_preview_preserve_sites_values_and_aliases(tmp_path, site_count, priority_mode):
+    from queue import Queue
+    from threading import Event
+
+    from report_generator.jobs import run_job
+
+    config, _, _ = priority_data(site_count)
+    config.settings.use_priority = priority_mode != "disabled"
+    incoming = ["AuxB", "Unnamed", "FirstA", "Other", "Third", "AuxA", "FirstB"]
+    sites = [f"SITE{site}" for site in reversed(range(site_count))]
+    values = {(row.channel, row.site): row.resistance_mohm for row in config.dcr}
+    config.dcr = [DcrRow(site, channel, values[channel, site]) for site in sites for channel in incoming]
+    for mapping in config.mappings:
+        mapping.display_name = f"Alias {incoming.index(mapping.channel)}"
+        if priority_mode == "empty":
+            mapping.priority = ""
+    export = build_report(config, None, None, tmp_path / "dcr.xlsx")
+    messages = Queue()
+    run_job("preview", {"config": config, "folder": str(tmp_path / "preview")}, messages, Event())
+    results = list(messages.queue)
+    assert not [payload for kind, payload in results if kind == "error"]
+    preview, images = next(payload for kind, payload in results if kind == "result")
+    assert images == []
+    assert export.sheets == preview.sheets == ["DCR"]
+    expected = (["FirstA", "FirstB", "Third", "AuxB", "AuxA", "Other", "Unnamed"]
+                if priority_mode == "enabled" else incoming)
+    channel_column = 3 if site_count <= 8 else 2
+    site_column = channel_column + 1
+    for result in (export, preview):
+        book = openpyxl.load_workbook(result.path)
+        try:
+            sheet = book["DCR"]
+            assert [sheet.cell(4, site_column + offset).value for offset in range(site_count)] == sites
+            for row, channel in enumerate(expected, 5):
+                cell = sheet.cell(row, channel_column)
+                assert cell.value == f"Alias {incoming.index(channel)}"
+                assert cell.comment.text == channel
+                assert cell.comment.author == "SPD Report Generator"
+                assert [sheet.cell(row, site_column + offset).value for offset in range(site_count)] == [
+                    values[channel, site] for site in sites]
+        finally:
+            book.close()
 
 
 def test_wide_priority_bands_preserve_raw_channel_identity_and_every_site(tmp_path):
