@@ -141,7 +141,7 @@ def test_ranked_mixed_site_channel_group_has_no_right_legend(tmp_path, monkeypat
         ax = figure.axes[0]
         assert ax.get_title() == "5순위"
         assert ax.get_xlabel() == "Frequency [MHz]"
-        assert ax.get_ylabel() == "|Zii| [mΩ]"
+        assert ax.get_ylabel() == "Impedance [mΩ]"
         assert len(ax.lines) == 2
         assert ax.get_legend() is None and not figure.legends
         assert ax.get_position().x1 > .95
@@ -195,7 +195,7 @@ def test_group_plot_solid_width_and_distinct_site_channel_colors(
         assert ax.get_legend() is None and not figure.legends
         if count <= len(render.COLORS):
             assert colors == render.COLORS[:count]
-        assert ax.get_ylabel() == f"|Zii| [{unit}]"
+        assert ax.get_ylabel() == f"Impedance [{unit}]"
         for line, mapping in zip(ax.lines, config.mappings):
             frequency, magnitude = plot_impedance(ts, mapping.port_index)
             np.testing.assert_array_equal(line.get_xdata(), frequency / 1e6)

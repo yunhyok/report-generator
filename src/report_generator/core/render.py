@@ -101,7 +101,7 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
         ax.set_xlim(bounds[0] / 1e6, bounds[1] / 1e6)
     ax.set_title(title, fontproperties=TITLE_FONT, pad=15, parse_math=False)
     ax.set_xlabel("Frequency [MHz]")
-    ax.set_ylabel(f"|Zii| [{unit}]")
+    ax.set_ylabel(f"Impedance [{unit}]")
     ax.grid(True, which="major", color="#d8d8d8", linewidth=.7)
     ax.grid(True, which="minor", color="#eeeeee", linewidth=.4)
     _axes_font(ax, pcb=config.settings.board_type.upper() == "PCB")

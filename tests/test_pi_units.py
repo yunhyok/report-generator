@@ -107,7 +107,7 @@ def test_export_and_group_rendering_share_whole_report_units(tmp_path, monkeypat
         book.close()
     assert len(captured) == 2
     for index, (label, values) in enumerate(captured):
-        assert label == f"|Zii| [{unit}]"
+        assert label == f"Impedance [{unit}]"
         np.testing.assert_allclose(values, plot_impedance(ts, index + 1)[1] * factor, equal_nan=True)
     np.testing.assert_equal(ts.z_diagonal, raw)
 
@@ -124,7 +124,7 @@ def test_standalone_group_preview_uses_other_group_and_summary_disabled_port(tmp
 
     monkeypatch.setattr(render, "_finish", capture)
     render.render_group_plot(ts, config, "G0", tmp_path / "preview.png")
-    assert labels == ["|Zii| [Ω]"]
+    assert labels == ["Impedance [Ω]"]
 
 
 @pytest.mark.parametrize("board_type", ["PCB", "MLO"])
