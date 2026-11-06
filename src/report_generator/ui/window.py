@@ -288,8 +288,6 @@ class MainWindow(QMainWindow):
         form = QFormLayout()
         self.title_input = QLineEdit(self.config.settings.title)
         self.product_input = QLineEdit()
-        self.board_type = QComboBox()
-        self.board_type.addItems(["MLO", "PCB"])
         self.date_input = QLineEdit(self.config.settings.report_date)
         self.revision_input = QLineEdit()
         self.ground_input = QLineEdit("GND, DGND")
@@ -306,7 +304,7 @@ class MainWindow(QMainWindow):
         self.mirror.setChecked(True)
         for label, widget in (
             ("제목", self.title_input), ("제품명", self.product_input),
-            ("보드 종류", self.board_type), ("그래프 선 굵기", self.plot_line_width),
+            ("그래프 선 굵기", self.plot_line_width),
             ("작성일", self.date_input), ("Revision", self.revision_input),
             ("접지 Net (쉼표 구분)", self.ground_input), ("Bottom 방향", self.mirror),
         ):
@@ -525,7 +523,7 @@ class MainWindow(QMainWindow):
         config = self.config if dcr is None else replace(self.config, dcr=dcr)
         config.settings = ReportSettings(
             title=self.title_input.text().strip(), product=self.product_input.text().strip(),
-            board_type=self.board_type.currentText(), report_date=self.date_input.text().strip(),
+            report_date=self.date_input.text().strip(),
             revision=self.revision_input.text().strip(), bottom_mirror=self.mirror.isChecked(),
             ground_nets=[n.strip() for n in self.ground_input.text().split(",") if n.strip()],
             use_priority=self.config.settings.use_priority, plot_line_width_pt=self.plot_line_width.value(),
@@ -1042,7 +1040,6 @@ class MainWindow(QMainWindow):
         settings = self.config.settings
         self.title_input.setText(settings.title)
         self.product_input.setText(settings.product)
-        self.board_type.setCurrentText(settings.board_type)
         self.date_input.setText(settings.report_date)
         self.revision_input.setText(settings.revision)
         self.ground_input.setText(", ".join(settings.ground_nets))

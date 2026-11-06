@@ -24,8 +24,8 @@ FONT = FontProperties(family="Malgun Gothic", size=15)
 TITLE_FONT = FontProperties(family="Malgun Gothic", size=26, weight="bold")
 COLORS = ["#2474b5", "#d95f02", "#168653", "#9857aa", "#bc3143", "#876441",
           "#d85f9c", "#53747b", "#928500", "#16a1a5", "#6067ba", "#b87524"]
-CAP_COLORS_MLO = {100e-9: "#ff0000", 1e-6: "#92d050", 4.7e-6: "#3767ff"}
-CAP_COLORS_PCB = {100e-12: "#efcce8", 10e-9: "#83df91", 100e-9: "#b9e6f2", 1e-6: "#ffff00", 10e-6: "#ff0000"}
+CAP_COLORS = {100e-12: "#efcce8", 10e-9: "#83df91", 100e-9: "#b9e6f2",
+              1e-6: "#ffff00", 4.7e-6: "#3767ff", 10e-6: "#ff0000"}
 PLACEMENT_SIDES = ("Top", "Bottom")
 rcParams["axes.unicode_minus"] = False
 
@@ -57,12 +57,10 @@ def _finish(fig: Figure, output_path: str | Path) -> str:
     return str(path)
 
 
-def _axes_font(ax, pcb=False) -> None:
-    for text in ax.get_yticklabels():
+def _axes_font(ax) -> None:
+    for text in ax.get_xticklabels() + ax.get_yticklabels():
         text.set_fontproperties(FONT)
-    for text in ax.get_xticklabels():
-        text.set_fontproperties(FontProperties(family="Malgun Gothic", size=10 if pcb else 15))
-    ax.xaxis.label.set_fontproperties(FontProperties(family="Malgun Gothic", size=9 if pcb else 14.5))
+    ax.xaxis.label.set_fontproperties(FontProperties(family="Malgun Gothic", size=14.5))
     ax.yaxis.label.set_fontproperties(FontProperties(family="Malgun Gothic", size=14))
 
 
@@ -104,7 +102,7 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
     ax.set_ylabel(f"Impedance [{unit}]")
     ax.grid(True, which="major", color="#d8d8d8", linewidth=.7)
     ax.grid(True, which="minor", color="#eeeeee", linewidth=.4)
-    _axes_font(ax, pcb=config.settings.board_type.upper() == "PCB")
+    _axes_font(ax)
     fig.tight_layout()
     return _finish(fig, outputpath)
 
@@ -121,8 +119,7 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
         return c.is_cap and (not nets or bool(nets.intersection(c.nets)))
     capacitances = {resolved_capacitance(c, spd, config) for c in components if highlighted(c)}
     known = sorted(v for v in capacitances if v is not None)
-    reference_colors = CAP_COLORS_PCB if config.settings.board_type.upper() == "PCB" else CAP_COLORS_MLO
-    palette = {value: next((color for nominal, color in reference_colors.items() if np.isclose(value, nominal, rtol=1e-6, atol=0)),
+    palette = {value: next((color for nominal, color in CAP_COLORS.items() if np.isclose(value, nominal, rtol=1e-6, atol=0)),
                            COLORS[i % len(COLORS)]) for i, value in enumerate(known)}
     polygons = defaultdict(list)
     polygon_sizes = defaultdict(list)

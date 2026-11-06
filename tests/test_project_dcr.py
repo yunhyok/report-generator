@@ -22,6 +22,23 @@ def test_project_roundtrip_and_changed_source(tmp_path):
     assert changed == ["spd"] and not restored.mappings[0].confirmed
 
 
+@pytest.mark.parametrize("board_type", ["MLO", "PCB"])
+def test_legacy_board_setting_is_dropped_on_save(tmp_path, board_type):
+    path = tmp_path / "board.report.json"
+    config = ReportConfig(dcr=[DcrRow("SITE0", "VDD", 1.5)])
+    config.settings.plot_line_width_pt = 2.5
+    save_project(path, config, {})
+    original = json.loads(path.read_text(encoding="utf-8"))
+    assert "board_type" not in original["config"]["settings"]
+    original["config"]["settings"]["board_type"] = board_type
+    path.write_text(json.dumps(original), encoding="utf-8")
+    restored, sources, signatures, changed = load_project(path)
+    assert restored == config and not changed
+    save_project(path, restored, sources, signatures)
+    del original["config"]["settings"]["board_type"]
+    assert json.loads(path.read_text(encoding="utf-8")) == original
+
+
 def test_existing_projects_keep_ranks_but_explicitly_disabled_ranks_stay_off(tmp_path):
     path = tmp_path / "priority.report.json"
     config = ReportConfig(mappings=[ChannelMapping(site="A", channel="MAIN", priority="2")])

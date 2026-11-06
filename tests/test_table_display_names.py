@@ -42,12 +42,10 @@ def check_label(cell, value, original):
 
 
 @pytest.mark.parametrize("site_count", [2, 9])
-@pytest.mark.parametrize("board_type", ["PCB", "MLO"])
 @pytest.mark.parametrize("use_priority", [False, True])
 @pytest.mark.parametrize("aliases", ["common", "mixed"])
-def test_all_table_labels_use_display_names_without_changing_numeric_identity(tmp_path, site_count, board_type, use_priority, aliases):
+def test_all_table_labels_use_display_names_without_changing_numeric_identity(tmp_path, site_count, use_priority, aliases):
     config, spd, ts = sample(site_count)
-    config.settings.board_type = board_type
     config.settings.use_priority = use_priority
     original_config = deepcopy(config)
     baseline = report.build_report(config, spd, ts, tmp_path / "baseline.xlsx")
@@ -95,9 +93,8 @@ def test_all_table_labels_use_display_names_without_changing_numeric_identity(tm
 
 
 @pytest.mark.parametrize("site_count", [2, 9])
-@pytest.mark.parametrize("board_type", ["PCB", "MLO"])
 @pytest.mark.parametrize("use_priority", [False, True])
-def test_detail_table_uses_per_site_names_or_one_reversible_merged_heading(tmp_path, site_count, board_type, use_priority):
+def test_detail_table_uses_per_site_names_or_one_reversible_merged_heading(tmp_path, site_count, use_priority):
     config, _, ts = sample(site_count)
     config.mappings = config.mappings[:site_count]
     baseline_spots = deepcopy(report._spot_rows(config, ts))
@@ -107,7 +104,7 @@ def test_detail_table_uses_per_site_names_or_one_reversible_merged_heading(tmp_p
     baseline = book.active
     sheet = book.create_sheet("Aliased")
     for target, values in ((baseline, baseline_spots), (sheet, spots)):
-        report._write_pi(target, values, pcb=board_type == "PCB", column=16, detail=True,
+        report._write_pi(target, values, column=16, detail=True,
                          wide=site_count > 8, use_priority=use_priority)
     assert numeric_cells(sheet) == numeric_cells(baseline)
     assert str(sheet.merged_cells) == str(baseline.merged_cells)
@@ -118,7 +115,7 @@ def test_detail_table_uses_per_site_names_or_one_reversible_merged_heading(tmp_p
     try:
         sheet = book["Aliased"]
         channel = config.mappings[0].channel
-        if site_count > 8 and board_type == "PCB":
+        if site_count > 8:
             display = "\n".join(f"SITE{site}: " + ("=Literal alias" if site == 0 else channel)
                                  for site in range(site_count))
             cell = sheet.cell(4 + use_priority, 16)
@@ -139,10 +136,10 @@ def test_long_display_names_are_literal_wrapped_and_excel_row_height_safe(kind):
     book = Workbook()
     sheet = book.active
     if kind == "100":
-        report._write_100(sheet, spots, pcb=True)
+        report._write_100(sheet, spots)
         cell = sheet["B5"]
     elif kind in ("pi", "wide_pi"):
-        report._write_pi(sheet, spots, pcb=True, wide=kind == "wide_pi")
+        report._write_pi(sheet, spots, wide=kind == "wide_pi")
         cell = sheet["B4" if kind == "wide_pi" else "B5"]
     elif kind == "cap":
         report._write_caps(sheet, [{"channel": "RAW", "site": "SITE0", "capacitance_f": 1e-7,

@@ -26,7 +26,6 @@ def sample(tmp_path, blank):
                 for index, (site, channel) in enumerate((site, channel) for site in range(2) for channel in CHANNELS)]
     config = ReportConfig(mappings=mappings)
     config.settings.use_priority = True
-    config.settings.board_type = "PCB"
     ts = TouchstoneData(str(source), source_signature(source), [Port(i + 1, f"P{i + 1}") for i in range(14)],
                         np.array(FREQUENCIES), np.tile(np.arange(1, 15), (5, 1)).astype(complex))
     return config, ts

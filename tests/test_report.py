@@ -38,7 +38,6 @@ def test_sweep_note_shows_report_band_and_plot_includes_upper_decade(tmp_path):
 
 def test_units_spots_formula_metrics_and_same_chart_source(tmp_path):
     config, ts = data()
-    config.settings.board_type = "PCB"
     result = build_report(config, None, ts, tmp_path / "report.xlsx")
     assert result.sheets == ["PI ALL@100MHz", "PI ALL", "VDD"]
     w = openpyxl.load_workbook(result.path)
@@ -67,11 +66,6 @@ def test_units_spots_formula_metrics_and_same_chart_source(tmp_path):
     with zipfile.ZipFile(result.path) as z:
         assert len([n for n in z.namelist() if n.startswith("xl/media/")]) == 1
         assert not any(n.startswith("xl/charts/") for n in z.namelist())
-    w.close()
-    config.settings.board_type = "MLO"
-    result = build_report(config, None, ts, tmp_path / "mlo.xlsx")
-    w = openpyxl.load_workbook(result.path, read_only=True)
-    assert w["PI ALL"]["E5"].value == pytest.approx(1000 * 2**.5)
     w.close()
 
 
@@ -162,13 +156,11 @@ def test_empty_and_invalid_dcr_rejected(tmp_path):
         build_report(config, None, None, tmp_path / "invalid.xlsx")
 
 
-@pytest.mark.parametrize("board_type", ["MLO", "PCB"])
-def test_general_component_geometry_without_mapping_is_valid_partial_report(tmp_path, board_type):
+def test_general_component_geometry_without_mapping_is_valid_partial_report(tmp_path):
     spd = SpdData("synthetic.spd", {}, components=[
         Component("U1", "chip", x_mm=10, y_mm=20, width_mm=3, height_mm=4),
         Component("J1", "connector", x_mm=30, y_mm=20, side="Bottom")])
     config = ReportConfig()
-    config.settings.board_type = board_type
     pages, omitted = plan_pages(config, spd, None)
     assert pages == ["CAP_배치도면"]
     result = build_report(config, spd, None, tmp_path / "geometry.xlsx")
@@ -178,13 +170,12 @@ def test_general_component_geometry_without_mapping_is_valid_partial_report(tmp_
     w.close()
 
 
-@pytest.mark.parametrize("board_type,side", [("MLO", "Top"), ("MLO", "Bottom"), ("PCB", "Top"), ("PCB", "Bottom")])
-def test_one_sided_geometry_keeps_independent_top_and_bottom_panels(tmp_path, board_type, side):
+@pytest.mark.parametrize("side", ["Top", "Bottom"])
+def test_one_sided_geometry_keeps_independent_top_and_bottom_panels(tmp_path, side):
     spd = SpdData("synthetic.spd", {}, components=[Component("U1", "chip", x_mm=10, y_mm=20,
         width_mm=3, height_mm=4, side=side)])
     config = ReportConfig()
-    config.settings.board_type = board_type
-    result = build_report(config, spd, None, tmp_path / f"{board_type}-{side}.xlsx")
+    result = build_report(config, spd, None, tmp_path / f"{side}.xlsx")
     w = openpyxl.load_workbook(result.path)
     images = w["CAP_배치도면"]._images
     assert [image.anchor._from.col for image in images] == [1, 15]
@@ -195,11 +186,9 @@ def test_one_sided_geometry_keeps_independent_top_and_bottom_panels(tmp_path, bo
     w.close()
 
 
-@pytest.mark.parametrize("board_type", ["MLO", "PCB"])
-def test_empty_spd_still_has_two_placement_panels(tmp_path, board_type):
+def test_empty_spd_still_has_two_placement_panels(tmp_path):
     config = ReportConfig()
-    config.settings.board_type = board_type
-    result = build_report(config, SpdData("empty.spd", {}), None, tmp_path / f"empty-{board_type}.xlsx")
+    result = build_report(config, SpdData("empty.spd", {}), None, tmp_path / "empty.xlsx")
     w = openpyxl.load_workbook(result.path)
     assert [image.anchor._from.col for image in w["CAP_배치도면"]._images] == [1, 15]
     assert all(image._data() for image in w["CAP_배치도면"]._images)
@@ -300,7 +289,7 @@ def test_wide_reference_blocks_cap_headers_and_display_precision(tmp_path):
                 for index, (channel, site) in enumerate((c, s) for c in range(5) for s in range(9))]
     config = ReportConfig(mappings=mappings)
     ts = TouchstoneData("synthetic.s45p", {}, [Port(i + 1, f"P{i + 1}") for i in range(45)],
-                        np.array(FREQUENCIES), np.full((5, 45), 1.123456 + 1j))
+                        np.array(FREQUENCIES), np.full((5, 45), .123456 + .1j))
     spd = SpdData("synthetic.spd", {}, models={"cap": SpiceModel("cap", 1e-7, valid=True)},
                   components=[Component(f"C{i}", "cap", [f"N{i}", "GND"], is_cap=True) for i in range(45)])
     result = build_report(config, spd, ts, tmp_path / "wide.xlsx")
@@ -312,12 +301,12 @@ def test_wide_reference_blocks_cap_headers_and_display_precision(tmp_path):
         assert "B4:H4" in pi.merged_cells and "W4:AC4" in pi.merged_cells
         assert "B17:H17" in pi.merged_cells
         assert pi["B6"].value == 0
-        assert pi["C6"].value == pytest.approx(abs(1.123456 + 1j) * 1000)
+        assert pi["C6"].value == pytest.approx(abs(.123456 + .1j) * 1000)
         assert pi["C6"].number_format == "0.0_ "
         assert pi["F6"].font.bold and not pi["E6"].font.bold
         assert book["PI ALL@100MHz"]["B5"].font.bold
         assert book["RAIL1"]["P4"].fill.fgColor.rgb == "00D9E2F3"
-        assert book["RAIL1"]["R5"].number_format == "0.0_ "
+        assert book["RAIL1"]["R6"].number_format == "0.0_ "
         caps = book["CAP_수량"]
         assert "B4:B5" in caps.merged_cells and "C4:K4" in caps.merged_cells
         assert caps["B6"].font.sz == 12 and caps["C6"].font.sz == 11
@@ -352,7 +341,6 @@ def priority_data(site_count):
                 for index, (channel, site) in enumerate((c, s) for c in range(len(names)) for s in range(site_count))]
     config = ReportConfig(mappings=mappings,
         dcr=[DcrRow(m.site, m.channel, index + .25) for index, m in enumerate(mappings)])
-    config.settings.board_type = "PCB"
     config.settings.product = "Synthetic metadata"
     values = np.array([[(frequency + 1) * (site + 1) * (channel + 1)
                         for channel in range(len(names)) for site in range(site_count)] for frequency in range(5)], dtype=complex)

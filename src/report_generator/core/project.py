@@ -20,8 +20,6 @@ def validate_config(config: ReportConfig) -> None:
         raise ValueError("DCR 원본 파일 경로가 올바르지 않습니다.")
     if not isinstance(config.channel_settings_source_path, str):
         raise ValueError("채널 설정 Excel 경로가 올바르지 않습니다.")
-    if config.settings.board_type not in ("MLO", "PCB"):
-        raise ValueError("보드 종류는 MLO 또는 PCB여야 합니다.")
     if not all(isinstance(v, str) for v in config.settings.ground_nets):
         raise ValueError("접지망 이름을 확인하세요.")
     for overrides in (config.model_overrides, config.component_overrides):
@@ -67,6 +65,7 @@ def load_project(path: str | Path) -> tuple[ReportConfig, dict[str, str], dict, 
         if data.get("version") != 1:
             raise ValueError("지원하지 않는 프로젝트 버전입니다.")
         raw = data["config"]
+        raw["settings"].pop("board_type", None)  # Older projects stored the board selector.
         config = ReportConfig(
             settings=ReportSettings(**raw["settings"]),
             mappings=[ChannelMapping(**v) for v in raw["mappings"]],

@@ -263,15 +263,16 @@ def _add_image(ws, path, anchor, max_width=900):
     return 5 + int(image.height / 20)
 
 
-def _table_units(pcb, values):
-    """Choose a scale from the unrounded ohm values under one table heading."""
-    if not pcb or max((v for v in values if v is not None), default=1) < 1:
-        return 1000, "mΩ"
-    return 1, "Ω"
+def _table_units(values):
+    """Choose a table's scale from its eligible, unrounded impedance values in ohms."""
+    measured = [v for v in values if v is not None and isfinite(v)]
+    if measured and 2 * sum(v >= 1 for v in measured) >= len(measured):
+        return 1, "Ω"
+    return 1000, "mΩ"
 
 
-def _write_100(ws, spots, *, pcb, use_priority=False, channel_keys=None):
-    factor, unit = _table_units(pcb, (values[3] for _, values, _ in spots))
+def _write_100(ws, spots, *, use_priority=False, channel_keys=None):
+    factor, unit = _table_units(values[3] for _, values, _ in spots)
     mappings = [m for m, _, _ in spots]
     sites = list(dict.fromkeys(m.site for m, _, _ in spots))
     channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
@@ -350,31 +351,24 @@ def _deviation(spots):
     return (max(values) - average) / average if average else None
 
 
-def _write_pi(ws, spots, column=2, *, pcb, wide=False, detail=False, channel_order=(),
+def _write_pi(ws, spots, column=2, *, wide=False, detail=False, channel_order=(),
               use_priority=False, channel_keys=None):
     channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
     by_channel = {channel: [spot for spot in spots if spot[0].channel == channel] for channel in channels}
     labels = [mapping.display_name.strip() or mapping.channel for mapping, _, _ in spots]
     priorities = _channel_priorities([m for m, _, _ in spots], use_priority)
     sections = _sections(channels, priorities, use_priority)
-    if not wide or (detail and not pcb):
-        factor, unit = _table_units(pcb, (v for _, values, _ in spots for v in values))
+    if not wide:
+        factor, unit = _table_units(v for _, values, _ in spots for v in values[1:4])
         priority = use_priority
         headers = (["Priority"] if priority else []) + [f"Channel / [{unit}]", "SITE", *FREQUENCY_LABELS]
         if not detail:
             headers.append("편차")
         _table(ws, headers, [], column=column)
-        if wide and detail:
-            color_index = channel_order.index(channels[0]) if channels[0] in channel_order else 0
-            for c in range(column, column + len(headers)):
-                ws.cell(4, c).fill = CHANNEL_HEADERS[color_index % len(CHANNEL_HEADERS)]
         channel_column = column + priority
         site_column = channel_column + 1
-        if detail and wide:
-            widths = ([9] if priority else []) + [_label_width(labels, 16.125), 7.5, 8.5, 7.5, 8.125, 9.625, 9.5]
-        else:
-            widths = ([9] if priority else []) + [_label_width(labels, 16.125 if detail else 30.5), 9]
-            widths += [9] * 5 if detail else [9.5, 9.125, 9.125, 9.125, 9.125, 9]
+        widths = ([9] if priority else []) + [_label_width(labels, 16.125 if detail else 30.5), 9]
+        widths += [9] * 5 if detail else [9.5, 9.125, 9.125, 9.125, 9.125, 9]
         _widths(ws, column, widths)
         row = 5
         channel_index = 0
@@ -417,7 +411,7 @@ def _write_pi(ws, spots, column=2, *, pcb, wide=False, detail=False, channel_ord
                 header_row = row + ranked
                 for offset, channel in enumerate(band):
                     entries = by_channel[channel]
-                    factor, unit = _table_units(pcb, (v for _, values, _ in entries for v in values))
+                    factor, unit = _table_units(v for _, values, _ in entries for v in values[1:4])
                     start = column + offset * block_width
                     color_index = channel_order.index(channel) if channel in channel_order else channels.index(channel)
                     fill = CHANNEL_HEADERS[color_index % len(CHANNEL_HEADERS)]
@@ -469,8 +463,7 @@ def _write_dcr(ws, rows, config, *, channel_keys=None):
     if small:
         _widths(ws, 2, [8.25, _label_width(labels.values(), 36.75), *([9.5] * len(sites))])
     else:
-        pcb = config.settings.board_type == "PCB"
-        _widths(ws, 2, [_label_width(labels.values(), 15.875 if pcb else 15.375), *([9 if pcb else 7.875] * len(sites))])
+        _widths(ws, 2, [_label_width(labels.values(), 15.875), *([9] * len(sites))])
     for row, channel in enumerate(channels, 5):
         _format_channel_label(ws.cell(row, 3 if small else 2), channel, labels[channel], channel_keys)
 
@@ -493,7 +486,7 @@ def _write_caps(ws, rows, spd, config, *, channel_keys=None):
     if small:
         widths = [_label_width(channel_labels.values(), 30.5), *([6.625] * len(sites))]
     else:
-        widths = [_label_width(channel_labels.values(), 15.625 if config.settings.board_type == "PCB" else 14.625), *([9] * len(sites))]
+        widths = [_label_width(channel_labels.values(), 15.625), *([9] * len(sites))]
     _widths(ws, 2, ([8.25] if use_priority else []) + widths)
     row_number = 4
     for value in values:
@@ -547,7 +540,6 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
     if not pages:
         raise ValueError("보고서를 만들 유효한 데이터가 없습니다. 입력과 채널 매핑을 확인하세요.")
     plot_units = pi_display_units(ts, config)
-    pcb = config.settings.board_type.upper() == "PCB"
     warnings = list(dict.fromkeys([*(spd.warnings if spd else []), *(ts.warnings if ts else [])]))
     if any(any(flags) for _, _, flags in _spot_rows(config, ts)):
         warnings.append("일부 기준 주파수 값에 복소 Z 선형 보간을 적용했습니다.")
@@ -565,11 +557,11 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                 ws = _base_sheet(wb, name, config, kind, ts)
                 image_bottom = 4
                 if kind == "100":
-                    _write_100(ws, payload, pcb=pcb, use_priority=config.settings.use_priority, channel_keys=channel_keys)
+                    _write_100(ws, payload, use_priority=config.settings.use_priority, channel_keys=channel_keys)
                 elif kind == "pi":
                     _write_pi(ws, payload,
                               wide=len({mapping.site for mapping, _, _ in payload}) > 8,
-                              use_priority=config.settings.use_priority, pcb=pcb, channel_keys=channel_keys)
+                              use_priority=config.settings.use_priority, channel_keys=channel_keys)
                 elif kind == "dcr":
                     _write_dcr(ws, payload, config, channel_keys=channel_keys)
                 elif kind == "cap":
@@ -588,7 +580,7 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                                    if plot_group(m) == group], column=16,
                               wide=len({mapping.site for mapping in _mappings(config, ts)}) > 8, detail=True,
                               channel_order=list(dict.fromkeys(mapping.channel for mapping in _mappings(config, ts))),
-                              use_priority=config.settings.use_priority, pcb=pcb, channel_keys=channel_keys)
+                              use_priority=config.settings.use_priority, channel_keys=channel_keys)
                 last_column = max(ws.max_column, 30 if kind == "placement" else 23 if kind == "group" else 2)
                 ws.print_area = f"A1:{get_column_letter(last_column)}{max(ws.max_row, image_bottom)}"
             checkpoint(cancel)

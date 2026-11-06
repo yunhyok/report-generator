@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import numpy as np
 import pytest
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 from report_generator.core import render, report
 from report_generator.core.models import ChannelMapping, DcrRow, Port, ReportConfig, TouchstoneData
@@ -14,7 +14,6 @@ def sample(values, frequencies=(1e5, 1e6, 1e7, 1e8, 1e9)):
     config = ReportConfig(mappings=[
         ChannelMapping(index + 1, channel=f"RAIL{index}", site=f"SITE{index}", group=f"G{index}")
         for index in range(values.shape[1])])
-    config.settings.board_type = "PCB"
     ts = TouchstoneData("synthetic.sNp", {}, [Port(i + 1, f"P{i + 1}") for i in range(values.shape[1])],
                        np.array(frequencies), values)
     return config, ts
@@ -25,14 +24,12 @@ def sample(values, frequencies=(1e5, 1e6, 1e7, 1e8, 1e9)):
     (1.000000001, (1, "Ω")), (-1j, (1, "Ω")), (complex(np.nan, np.nan), (1, "Ω")),
     (complex(np.inf, 0), (1, "Ω")),
 ])
-def test_pcb_strict_raw_100mhz_boundary(value, expected):
+def test_plot_scale_uses_strict_raw_100mhz_boundary(value, expected):
     config, ts = sample([[value]])
     ts.frequency_hz = np.array([1e8])
     before = ts.z_diagonal.copy()
     assert pi_display_units(ts, config) == expected
     np.testing.assert_equal(ts.z_diagonal, before)
-    config.settings.board_type = "MLO"
-    assert pi_display_units(ts, config) == (1000, "mΩ")
 
 
 def test_unit_selection_uses_all_selected_confirmed_mapped_ports_across_groups():
@@ -65,12 +62,29 @@ def test_unit_selection_interpolates_complex_z_without_extrapolating():
     assert pi_display_units(ts, config) == (1, "Ω")
 
 
-def test_pcb_table_unit_ignores_blanks_and_defaults_empty_tables_to_ohms():
-    assert report._table_units(True, [None, 0, .999999]) == (1000, "mΩ")
-    assert report._table_units(True, [None, 1]) == (1, "Ω")
-    assert report._table_units(True, []) == (1, "Ω")
-    assert report._table_units(True, [None]) == (1, "Ω")
-    assert report._table_units(False, [.1, 10]) == (1000, "mΩ")
+@pytest.mark.parametrize("values,expected", [
+    ([], (1000, "mΩ")),
+    ([None], (1000, "mΩ")),
+    ([1, .999999, None], (1, "Ω")),
+    ([1, .999999, 0], (1000, "mΩ")),
+    ([1, 2, .999999], (1, "Ω")),
+])
+def test_half_or_more_of_nonblank_unrounded_values_selects_ohms(values, expected):
+    assert report._table_units(values) == expected
+
+
+def test_100mhz_summary_counts_only_measured_site_cells():
+    spots = [
+        (ChannelMapping(channel="VDD", site=f"SITE{i}", priority="5"),
+         [2, 2, 2, value, 2], [False] * 5)
+        for i, value in enumerate((.1, .1, 4))
+    ]
+    book = Workbook()
+    sheet = book.active
+    report._write_100(sheet, spots, use_priority=True)
+    assert sheet["C4"].value == "Channel / [mΩ]"
+    assert [sheet.cell(5, c).value for c in (4, 5, 6, 8, 9)] == pytest.approx([100, 100, 4000, 4000, 1400])
+    book.close()
 
 
 def test_export_tables_choose_units_from_printed_values_but_graphs_keep_plot_scale(tmp_path, monkeypatch):
@@ -79,7 +93,7 @@ def test_export_tables_choose_units_from_printed_values_but_graphs_keep_plot_sca
         [.2, 2, .2],
         [np.nan, 2, .3],
         [.1, 2, .4],
-        [.5, 2, .5],
+        [1.5, 2, .5],
     ])
     config.mappings[1].summary = False  # This high port remains in its detail group only.
     config.mappings[2].group = config.mappings[1].group
@@ -114,16 +128,16 @@ def test_export_tables_choose_units_from_printed_values_but_graphs_keep_plot_sca
         assert summary["D6"].value == pytest.approx(400)
 
         all_frequencies = book["PI ALL"]
-        assert all_frequencies["B4"].value == "Channel / [Ω]"
+        assert all_frequencies["B4"].value == "Channel / [mΩ]"
         assert [all_frequencies.cell(row, 2).value for row in (5, 6)] == ["RAIL0", "RAIL2"]
-        assert all_frequencies["D5"].value == pytest.approx(.1)
+        assert all_frequencies["D5"].value == pytest.approx(100)
         assert all_frequencies["F5"].value is None
-        assert all_frequencies["H5"].value == pytest.approx(.5)
-        assert all_frequencies["D6"].value == pytest.approx(1)
+        assert all_frequencies["H5"].value == pytest.approx(1500)
+        assert all_frequencies["D6"].value == pytest.approx(1000)
 
         group0, group1 = book["G0"], book["G1"]
         assert group0["P4"].value == "Channel / [mΩ]"
-        assert group0["V5"].value == pytest.approx(500)
+        assert group0["V5"].value == pytest.approx(1500)
         assert group1["P4"].value == "Channel / [Ω]"
         assert group1["U5"].value == pytest.approx(2)
         assert group1["U6"].value == pytest.approx(.4)
@@ -153,23 +167,22 @@ def test_standalone_group_preview_uses_other_group_and_summary_disabled_port(tmp
     assert labels == ["Impedance [Ω]"]
 
 
-@pytest.mark.parametrize("board_type", ["PCB", "MLO"])
-def test_wide_pi_table_units_are_independent_per_channel_block(tmp_path, board_type):
+def test_wide_pi_table_units_are_independent_per_channel_block(tmp_path):
     values = np.full((5, 18), .1, dtype=complex)
-    values[0, 9:] = 1.25  # Only RAIL_B's 100kHz values require ohms for PCB.
+    values[[0, 4], :9] = 2  # Outer frequencies do not vote.
+    values[1:3, 9:] = 1  # In RAIL_B, two of the three eligible frequencies vote for ohms.
     config, ts = sample(values)
-    config.settings.board_type = board_type
     for index, mapping in enumerate(config.mappings):
         mapping.channel = "RAIL_A" if index < 9 else "RAIL_B"
         mapping.group = mapping.channel
-    result = report.build_report(config, None, ts, tmp_path / f"wide-{board_type}.xlsx")
+    result = report.build_report(config, None, ts, tmp_path / "wide.xlsx")
     book = load_workbook(result.path)
     try:
         wide_pi = book["PI ALL"]
         assert wide_pi["B4"].value == "RAIL_A / [mΩ]"
-        assert wide_pi["I4"].value == f"RAIL_B / [{'Ω' if board_type == 'PCB' else 'mΩ'}]"
-        assert wide_pi["G6"].value == pytest.approx(100)
-        assert wide_pi["N6"].value == pytest.approx(.1 if board_type == "PCB" else 100)
+        assert wide_pi["I4"].value == "RAIL_B / [Ω]"
+        assert wide_pi["G6"].value == pytest.approx(2000)
+        assert wide_pi["N6"].value == pytest.approx(.1)
         summary = book["PI ALL@100MHz"]
         assert summary["B4"].value == "Channel / [mΩ]"
         assert summary["F5"].value == pytest.approx(100)
@@ -177,16 +190,10 @@ def test_wide_pi_table_units_are_independent_per_channel_block(tmp_path, board_t
 
         detail_a = book["RAIL_A"]
         detail_b = book["RAIL_B"]
-        if board_type == "PCB":
-            assert detail_a["P4"].value == "RAIL_A / [mΩ]"
-            assert detail_b["P4"].value == "RAIL_B / [Ω]"
-            assert "P4:U4" in detail_a.merged_cells
-            assert detail_a["T6"].value == pytest.approx(100)
-            assert detail_b["T6"].value == pytest.approx(.1)
-        else:
-            for detail in (detail_a, detail_b):
-                assert detail["P4"].value == "Channel / [mΩ]"
-                assert detail["P5"].value in ("RAIL_A", "RAIL_B")
-                assert detail["U5"].value == pytest.approx(100)
+        assert detail_a["P4"].value == "RAIL_A / [mΩ]"
+        assert detail_b["P4"].value == "RAIL_B / [Ω]"
+        assert "P4:U4" in detail_a.merged_cells
+        assert detail_a["T6"].value == pytest.approx(100)
+        assert detail_b["T6"].value == pytest.approx(.1)
     finally:
         book.close()

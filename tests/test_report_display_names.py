@@ -44,7 +44,7 @@ def test_common_display_name_changes_presentation_and_preserves_source_values(tm
     try:
         assert with_book[name]["A1"].value is None
         assert (with_book[name]._images[0].anchor._from.col, with_book[name]._images[0].anchor._from.row) == (1, 1)
-        assert with_book[name]["P4"].value == "Channel / [mΩ]"
+        assert with_book[name]["P4"].value == "Channel / [Ω]"
         assert with_book["PI ALL"]["A1"].value == "Custom report · Power Impedance"
     finally:
         with_book.close()
@@ -79,7 +79,7 @@ def test_split_groups_with_same_alias_keep_distinct_sheets_and_preview_images(tm
             assert detail["A1"].value is None
             assert len(detail._images) == 1
             assert (detail._images[0].anchor._from.col, detail._images[0].anchor._from.row) == (1, 1)
-            assert detail["P4"].value == ("Priority" if use_priority else "Channel / [mΩ]")
+            assert detail["P4"].value == ("Priority" if use_priority else "Channel / [Ω]")
         channel_column = 17 if use_priority else 16
         site_column = channel_column + 1
         assert book["Split 0"].cell(5, channel_column).value == "Common_alias"

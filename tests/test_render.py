@@ -121,8 +121,8 @@ def test_group_plot_selected_ports_units_and_gaps(tmp_path, monkeypatch):
     render.render_group_plot(ts, config, "G", tmp_path / "plot.png")
     assert len(captured["lines"]) == 1
     values = captured["lines"][0]
-    assert values[0] == pytest.approx(1000 * 2**.5)
-    assert values[-1] == 5000
+    assert values[0] == pytest.approx(2**.5)
+    assert values[-1] == 5
     assert np.isnan(values[1:-1]).all()
     assert 1e6 in captured["frequencies"]
     assert captured["background"] == (1, 1, 1, 1)
@@ -141,7 +141,7 @@ def test_ranked_mixed_site_channel_group_has_no_right_legend(tmp_path, monkeypat
         ax = figure.axes[0]
         assert ax.get_title() == "5순위"
         assert ax.get_xlabel() == "Frequency [MHz]"
-        assert ax.get_ylabel() == "Impedance [mΩ]"
+        assert ax.get_ylabel() == "Impedance [Ω]"
         assert len(ax.lines) == 2
         assert ax.get_legend() is None and not figure.legends
         assert ax.get_position().x1 > .95
@@ -169,21 +169,20 @@ def test_single_explicit_group_keeps_group_title_without_legend(tmp_path, monkey
     render.render_group_plot(ts, config, "5순위", tmp_path / "single-ranked.png")
 
 
-@pytest.mark.parametrize("board_type,width,factor,unit", [("MLO", None, 1000, "mΩ"), ("PCB", 2.5, 1, "Ω")])
+@pytest.mark.parametrize("width,at_100mhz,factor,unit", [(None, .5, 1000, "mΩ"), (2.5, 1.0, 1, "Ω")])
 @pytest.mark.parametrize("count,channel_count", [(4, 1), (4, 2), (14, 1), (14, 2)])
 def test_group_plot_solid_width_and_distinct_site_channel_colors(
-        tmp_path, monkeypatch, board_type, width, factor, unit, count, channel_count):
+        tmp_path, monkeypatch, width, at_100mhz, factor, unit, count, channel_count):
     config = ReportConfig(mappings=[
         ChannelMapping(index + 1, channel=f"RAIL{index % channel_count}",
                        site=f"SITE{index // channel_count}", group="G", display_name=f"Name{index}")
         for index in range(count)
     ])
-    config.settings.board_type = board_type
     if width is not None:
         config.settings.plot_line_width_pt = width
-    values = np.tile([[1], [np.nan], [3]], (1, count)).astype(complex)
+    values = np.tile([[1], [np.nan], [at_100mhz], [3]], (1, count)).astype(complex)
     ts = TouchstoneData("synthetic", {}, [Port(i + 1, f"P{i + 1}") for i in range(count)],
-                       np.array([1e3, 1e6, 1e9]), values)
+                       np.array([1e3, 1e6, 1e8, 1e9]), values)
 
     def capture(figure, path):
         ax = figure.axes[0]
@@ -273,7 +272,7 @@ def test_plot_source_coverage_and_sparse_bracketing(tmp_path, monkeypatch, cover
     def capture(figure, path):
         line = figure.axes[0].lines[0]
         np.testing.assert_array_equal(line.get_xdata(), frequency / 1e6)
-        np.testing.assert_array_equal(line.get_ydata(), magnitude * 1000)
+        np.testing.assert_array_equal(line.get_ydata(), magnitude)
         if expected[0] < expected[1]:
             assert figure.axes[0].get_xlim() == (expected[0] / 1e6, expected[1] / 1e6)
         return str(path)
@@ -281,8 +280,7 @@ def test_plot_source_coverage_and_sparse_bracketing(tmp_path, monkeypatch, cover
     render.render_group_plot(ts, config, "G", tmp_path / "coverage.png")
 
 
-@pytest.mark.parametrize("board_type,fonts", [("MLO", (26, 14.5, 14, 15, 15)), ("PCB", (26, 9, 14, 10, 15))])
-def test_group_plots_have_no_legend_or_port_count_dependent_height(tmp_path, monkeypatch, board_type, fonts):
+def test_group_plots_have_no_legend_or_port_count_dependent_height(tmp_path, monkeypatch):
     captured = []
     original = render.FigureCanvasAgg.print_png
     def capture(canvas, filename, *args, **kwargs):
@@ -290,7 +288,7 @@ def test_group_plots_have_no_legend_or_port_count_dependent_height(tmp_path, mon
         if isinstance(filename, str):
             captured.append((tuple(fig.get_size_inches()), fig.legends, ax.get_legend(), len(ax.lines), ax.get_position().y0))
             assert (ax.title.get_fontsize(), ax.xaxis.label.get_fontsize(), ax.yaxis.label.get_fontsize(),
-                    ax.get_xticklabels()[0].get_fontsize(), ax.get_yticklabels()[0].get_fontsize()) == fonts
+                    ax.get_xticklabels()[0].get_fontsize(), ax.get_yticklabels()[0].get_fontsize()) == (26, 14.5, 14, 15, 15)
         assert ax.get_xscale() == ax.get_yscale() == "log"
         return original(canvas, filename, *args, **kwargs)
     monkeypatch.setattr(render.FigureCanvasAgg, "print_png", capture)
@@ -298,7 +296,6 @@ def test_group_plots_have_no_legend_or_port_count_dependent_height(tmp_path, mon
         ts = TouchstoneData("synthetic", {}, [Port(i+1, f"P{i+1}") for i in range(count)],
                             np.array([1e3, 1e6, 1e9]), np.tile([[1], [2], [3]], (1, count)))
         config = ReportConfig(mappings=[ChannelMapping(i+1, site=f"SITE{i}", channel=f"RAIL{i % 3}", group="G") for i in range(count)])
-        config.settings.board_type = board_type
         render.render_group_plot(ts, config, "G", tmp_path / f"group-{count}.png")
     assert captured[0][0] == captured[1][0]
     for _, figure_legends, axes_legend, _, bottom in captured:
@@ -323,8 +320,8 @@ def test_cad_placement_context_is_outline_and_cap_colors_follow_reference(tmp_pa
     render.render_placement(spd, config, "Top", tmp_path / "cad.png")
     assert any(not len(colors) for colors in captured["faces"])
     filled = np.concatenate([colors for colors in captured["faces"] if len(colors)])
-    assert any(np.allclose(color, (1, 0, 0, 1)) for color in filled)
-    assert any(np.allclose(color, (146/255, 208/255, 80/255, 1)) for color in filled)
+    assert any(np.allclose(color, (185/255, 230/255, 242/255, 1)) for color in filled)
+    assert any(np.allclose(color, (1, 1, 0, 1)) for color in filled)
     assert captured["labels"] == ["100nF", "1uF"]
 
 
@@ -379,11 +376,10 @@ def test_alias_placement_selection_and_invalid_side(tmp_path):
         render.render_placement(spd, config, "Left", tmp_path / "no.png")
 
 
-@pytest.mark.parametrize("board_type", ["PCB", "MLO"])
 @pytest.mark.parametrize("side,mirror", [("Top", True), ("Bottom", True), ("Bottom", False)])
 @pytest.mark.parametrize("with_outline", [False, True])
 def test_empty_placement_face_has_honest_label_and_only_true_outline(
-        tmp_path, monkeypatch, board_type, side, mirror, with_outline):
+        tmp_path, monkeypatch, side, mirror, with_outline):
     opposite = "Bottom" if side == "Top" else "Top"
     outline = [(10, 20), (40, 20), (40, 35), (10, 35), (10, 20)]
     spd = SpdData("synthetic.spd", {}, components=[
@@ -393,7 +389,6 @@ def test_empty_placement_face_has_honest_label_and_only_true_outline(
         Component("C2", "C", side=side, is_cap=True),
     ], outlines=[outline, [(999, 999)]] if with_outline else [])
     config = ReportConfig()
-    config.settings.board_type = board_type
     config.settings.bottom_mirror = mirror
     original = render._finish
 
@@ -469,7 +464,6 @@ def test_pale_cap_boundaries_survive_pad_overlays_and_excel_downsize(tmp_path, m
     spd = SpdData("synthetic.spd", {}, models={"C": SpiceModel("C", capacitance, valid=True)},
                   components=components)
     config = ReportConfig()
-    config.settings.board_type = "PCB"
     points = [(0, y) for y in (0, -1.2, -2.4)] + [(.25, y) for y in (0, -1.2, -2.4)] + [(5, 0)]
     captured = {}
     original = render._finish
@@ -536,7 +530,6 @@ def test_two_to_four_pixel_cap_features_keep_fill_and_separators(
                   models={"C": SpiceModel("C", 100e-9, valid=True)},
                   outlines=[[(-50, -30), (50, -30), (50, 30), (-50, 30), (-50, -30)]])
     config = ReportConfig()
-    config.settings.board_type = "PCB"
     captured = {}
     original = render._finish
 

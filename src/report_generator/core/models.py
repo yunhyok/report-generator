@@ -136,7 +136,6 @@ class DcrRow:
 class ReportSettings:
     title: str = "Power Integrity Report"
     product: str = ""
-    board_type: str = "MLO"
     report_date: str = field(default_factory=lambda: date.today().isoformat())
     revision: str = ""
     bottom_mirror: bool = True

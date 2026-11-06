@@ -108,7 +108,7 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 assert detail["A1"].value is None
                 assert len(detail._images) == 1
                 assert (detail._images[0].anchor._from.col, detail._images[0].anchor._from.row) == (1, 1)
-                assert [detail.cell(4, column).value for column in (16, 17, 18)] == ["Priority", "Channel / [mΩ]", "SITE"]
+                assert [detail.cell(4, column).value for column in (16, 17, 18)] == ["Priority", "Channel / [Ω]", "SITE"]
                 assert [(image.anchor._from.col, image.anchor._from.row)
                         for image in book["CAP_배치도면"]._images] == [(1, 3), (15, 3)]
                 assert any(label == "Load rails" for label, _ in images)
@@ -117,7 +117,7 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 assert pi["C5"].value == "VDD_CORE_IO" and pi["C5"].comment is None
                 assert pi["A2"].value == "* 1kHz ~ 1GHz : Automatic Frequency Sweep"
                 maximum_column = next(cell.column for cell in pi[4] if cell.value == "MAX.")
-                assert pi.cell(5, maximum_column).value == 1000
+                assert pi.cell(5, maximum_column).value == 1
                 dcr = book["DCR"]
                 site_column = next(cell.column for cell in dcr[4] if cell.value == "SITE0")
                 assert dcr.cell(5, site_column).value == 2
