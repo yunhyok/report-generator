@@ -20,8 +20,8 @@ def sample():
     return config, ts
 
 
-def numbers(path):
-    values, _ = inspect_workbook(path)
+def numbers(path, channel_keys=None):
+    values, _ = inspect_workbook(path, channel_keys=channel_keys)
     return {kind: {key: cell["value"] for key, cell in rows.items()} for kind, rows in values.items()}
 
 
@@ -34,13 +34,14 @@ def test_common_display_name_changes_presentation_and_preserves_source_values(tm
         mapping.display_name = alias
     config.mappings.append(ChannelMapping(1, channel="EXCLUDED", site="SITE0", group="Original",
                                           selected=False, display_name="Do not use"))
-    result = build_report(config, None, ts, tmp_path / "aliased.xlsx")
-    assert numbers(result.path) == numbers(original.path)
+    channel_keys = {}
+    result = build_report(config, None, ts, tmp_path / "aliased.xlsx", channel_keys=channel_keys)
+    assert numbers(result.path, channel_keys) == numbers(original.path)
     name = result.sheets[-1]
-    assert len(name) <= 31 and not any(char in name for char in "/[]")
+    assert name == "Original"
     with_book = load_workbook(result.path)
     try:
-        assert with_book[name]["A1"].value == f"Custom report · {alias}"
+        assert with_book[name]["A1"].value == "Custom report · Original"
         assert with_book[name]["A1"].data_type == "s"
         assert with_book["PI ALL"]["A1"].value == "Custom report · Power Impedance"
     finally:
@@ -63,19 +64,19 @@ def test_split_groups_with_same_alias_keep_distinct_sheets_and_preview_images(tm
     messages = list(queue.queue)
     assert not [payload for kind, payload in messages if kind == "error"]
     report, images = next(payload for kind, payload in messages if kind == "result")
-    assert report.sheets[-2:] == ["Common_alias", "Common_alias (2)"]
-    assert [label for label, _ in images] == ["Common_alias · Split 0", "Common_alias · Split 1"]
+    assert report.sheets[-2:] == ["Split 0", "Split 1"]
+    assert [label for label, _ in images] == ["Split 0", "Split 1"]
     assert len({path for _, path in images}) == 2
     book = load_workbook(report.path)
     try:
         for name in report.sheets[-2:]:
-            assert book[name]["A1"].value == "Common_alias"
-        assert book["Common_alias"]["P5"].value == "Common_alias"
-        assert book["Common_alias (2)"]["P5"].value == "Common_alias"
-        assert book["Common_alias"]["P5"].comment.text == "RAW"
-        assert book["Common_alias (2)"]["P5"].comment.text == "RAW"
-        assert book["Common_alias"]["Q5"].value == 0
-        assert book["Common_alias (2)"]["Q5"].value == 1
+            assert book[name]["A1"].value == name
+        assert book["Split 0"]["P5"].value == "Common_alias"
+        assert book["Split 1"]["P5"].value == "Common_alias"
+        assert book["Split 0"]["P5"].comment is None
+        assert book["Split 1"]["P5"].comment is None
+        assert book["Split 0"]["Q5"].value == 0
+        assert book["Split 1"]["Q5"].value == 1
     finally:
         book.close()
 
@@ -89,7 +90,7 @@ def test_partial_site_alias_keeps_group_and_numeric_identity(tmp_path):
     try:
         assert book["Original"]["A1"].value == "Original"
         assert book["Original"]["P5"].value == "Only_SITE0"
-        assert book["Original"]["P5"].comment.text == "RAW"
+        assert book["Original"]["P5"].comment is None
         assert book["Original"]["P6"].value == "RAW"
         assert book["Original"]["P6"].comment is None
         assert book["Original"]["Q5"].value == 0

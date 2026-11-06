@@ -99,6 +99,9 @@ def test_partial_and_summary_flags_and_safe_unique_names(tmp_path):
     assert "DCR" in omitted
     config.mappings[0].display_name = "A" * 30 + "'middle"
     config.mappings[1].display_name = "😀" * 16
+    assert plan_pages(config, None, ts)[0][-2:] == pages[-2:]
+    config.mappings[0].group = "A" * 30 + "'middle"
+    config.mappings[1].group = "😀" * 16
     assert plan_pages(config, None, ts)[0][-2:] == ["A" * 30, "😀" * 15]
     config.mappings[0].group = config.mappings[1].group = ""
     result = build_report(config, None, ts, tmp_path / "summary.xlsx")
@@ -439,8 +442,7 @@ def test_dcr_priority_export_and_preview_preserve_sites_values_and_aliases(tmp_p
             for row, channel in enumerate(expected, 5):
                 cell = sheet.cell(row, channel_column)
                 assert cell.value == f"Alias {incoming.index(channel)}"
-                assert cell.comment.text == channel
-                assert cell.comment.author == "SPD Report Generator"
+                assert cell.comment is None
                 assert [sheet.cell(row, site_column + offset).value for offset in range(site_count)] == [
                     values[channel, site] for site in sites]
         finally:
@@ -451,7 +453,8 @@ def test_wide_priority_bands_preserve_raw_channel_identity_and_every_site(tmp_pa
     from report_generator.validation import inspect_workbook
     config, spd, ts = priority_data(9)
     config.settings.use_priority = True
-    result = build_report(config, spd, ts, tmp_path / "wide-priority.xlsx")
+    channel_keys = {}
+    result = build_report(config, spd, ts, tmp_path / "wide-priority.xlsx", channel_keys=channel_keys)
     book = openpyxl.load_workbook(result.path)
     try:
         pi = book["PI ALL"]
@@ -465,7 +468,7 @@ def test_wide_priority_bands_preserve_raw_channel_identity_and_every_site(tmp_pa
         assert book["CAP_수량"]["C6"].font.sz == 12
     finally:
         book.close()
-    actual, _ = inspect_workbook(result.path)
+    actual, _ = inspect_workbook(result.path, channel_keys=channel_keys)
     expected = {(mapping.channel, mapping.site, frequency) for mapping in config.mappings for frequency in
                 ("100kHz", "1MHz", "10MHz", "100MHz", "1GHz")}
     assert set(actual["PI"]) == expected

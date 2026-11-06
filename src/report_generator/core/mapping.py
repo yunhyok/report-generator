@@ -24,7 +24,7 @@ def priority_value(text: str) -> int | str | None:
 
 
 def plot_group(mapping: ChannelMapping) -> str:
-    return mapping.group or mapping.channel
+    return mapping.group.strip() or mapping.channel
 
 
 def channel_sections(channels, priorities, enabled):
@@ -42,11 +42,11 @@ def channel_sections(channels, priorities, enabled):
     return sections
 
 
-def group_presentation(group: str, mappings: list[ChannelMapping]) -> tuple[str, bool]:
+def group_title(group: str, mappings: list[ChannelMapping]) -> str:
+    if any(mapping.group.strip() for mapping in mappings):
+        return group
     names = {mapping.display_name.strip() for mapping in mappings}
-    if len(names) == 1 and "" not in names:
-        return names.pop(), False
-    return group, bool(names - {""})
+    return names.pop() if len(names) == 1 and "" not in names else group
 
 
 def _identity(port: Port) -> tuple[str, str, str]:
@@ -126,7 +126,7 @@ def suggest_mappings(spd: SpdData | None, ts: TouchstoneData | None) -> list[Cha
             port_index=port.index if ts else None,
             source_name=port.name + (f" | {port.description}" if port.description and port.description != port.name else ""),
             spd_port=candidates[0].name if len(candidates) == 1 else (port.name if not ts else ""),
-            net=net, site=site, channel=channel, group=channel, selected=port.enabled,
+            net=net, site=site, channel=channel, selected=port.enabled,
             status="자동 제안" if confirmed else "매핑 확인 필요", confirmed=confirmed))
     if spd and not ts:
         existing = {row.net for row in rows}
@@ -142,7 +142,7 @@ def suggest_mappings(spd: SpdData | None, ts: TouchstoneData | None) -> list[Cha
                     continue
                 existing.add(raw_net)
                 rows.append(ChannelMapping(source_name=net, net=raw_net, site=site, channel=channel,
-                                           group=channel, status="커패시터 네트에서 제안", confirmed=bool(site)))
+                                           status="커패시터 네트에서 제안", confirmed=bool(site)))
     counts = Counter((row.channel.casefold(), row.site.casefold()) for row in rows)
     for row in rows:
         if counts[(row.channel.casefold(), row.site.casefold())] > 1:

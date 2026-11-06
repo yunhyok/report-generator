@@ -31,7 +31,7 @@ def test_matches_spd_explicit_fields_and_retains_raw_net():
     row = suggest_mappings(spd, ts)[0]
     assert (row.site, row.channel, row.net, row.port_index) == ("SITE2", "RAIL_B", "U2_RAIL_B", 1)
     assert row.spd_port == spd.ports[0].name
-    assert row.group == row.channel
+    assert row.group == ""
     assert row.confirmed
     validate_mappings([row], ts)
 

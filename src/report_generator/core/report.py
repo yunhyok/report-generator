@@ -9,7 +9,6 @@ import tempfile
 import numpy as np
 from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
-from openpyxl.comments import Comment
 from openpyxl.drawing.image import Image
 from openpyxl.styles import Alignment, Border, Color, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -18,7 +17,7 @@ from openpyxl.worksheet.views import Selection
 from .models import ReportConfig, ReportResult, SpdData, TouchstoneData, checkpoint
 from .render import PLACEMENT_SIDES, render_group_plot, render_placement
 from .capacitance import summarize_caps
-from .mapping import channel_sections as _sections, group_presentation, plot_group, priority_value
+from .mapping import channel_sections as _sections, group_title, plot_group, priority_value
 from .dcr import dcr_channel_order
 from .touchstone import interpolate_impedance, pi_display_units, plot_frequency_bounds, plot_impedance
 
@@ -80,9 +79,10 @@ def _channel_label(channel, mappings, sites=None):
     return "\n".join(f"{site}: {name}" for site, name in names.items())
 
 
-def _channel_comment(cell, channel, label, width=None):
+def _format_channel_label(cell, channel, label, channel_keys, width=None):
     if label != channel:
-        cell.comment = Comment(channel, "SPD Report Generator")
+        if channel_keys is not None:
+            channel_keys[cell.parent.title, cell.coordinate] = channel
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         width = width or cell.parent.column_dimensions[cell.column_letter].width
         lines = sum(max(1, ceil(len(line) * 1.1 / width)) for line in str(cell.value).splitlines())
@@ -172,8 +172,8 @@ def _plan(config, spd, ts):
     for group, maps in plot_groups(config, ts).items():
         valid = any(np.any(plot_impedance(ts, m.port_index)[1] > 0) for m in maps)
         if valid:
-            title, _ = group_presentation(group, maps)
-            heading = title if any(m.display_name.strip() for m in maps) else None
+            title = group_title(group, maps)
+            heading = title if any(m.group.strip() or m.display_name.strip() for m in maps) else None
             add("group", title, (group, heading))
         else:
             omitted[f"그룹: {group}"] = "1kHz~2GHz 표시 범위에 유효한 임피던스가 없습니다."
@@ -266,7 +266,7 @@ def _add_image(ws, path, anchor, max_width=900):
     return 5 + int(image.height / 20)
 
 
-def _write_100(ws, spots, factor, unit, use_priority=False):
+def _write_100(ws, spots, factor, unit, use_priority=False, *, channel_keys=None):
     mappings = [m for m, _, _ in spots]
     sites = list(dict.fromkeys(m.site for m, _, _ in spots))
     channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
@@ -310,7 +310,7 @@ def _write_100(ws, spots, factor, unit, use_priority=False):
             for offset, value in enumerate(values):
                 _put(ws, row, 2 + offset, value,
                      number_format=NUMBER if offset > use_priority else None)
-            _channel_comment(ws.cell(row, 2 + use_priority), channel, labels[channel])
+            _format_channel_label(ws.cell(row, 2 + use_priority), channel, labels[channel], channel_keys)
             ws.cell(row, deviation_column).number_format = "0.0%"
             if not small:
                 ws.cell(row, 2 + use_priority).font = _font(bold=True)
@@ -344,7 +344,8 @@ def _deviation(spots):
     return (max(values) - average) / average if average else None
 
 
-def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, channel_order=(), use_priority=False, pcb=None):
+def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, channel_order=(),
+              use_priority=False, pcb=None, channel_keys=None):
     channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
     by_channel = {channel: [spot for spot in spots if spot[0].channel == channel] for channel in channels}
     labels = [mapping.display_name.strip() or mapping.channel for mapping, _, _ in spots]
@@ -385,7 +386,7 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
                         _put(ws, row, column, rank if isinstance(rank, int) else None, fill=fill)
                     display = mapping.display_name.strip() or channel
                     cell = _put(ws, row, channel_column, display, fill=fill)
-                    _channel_comment(cell, channel, display)
+                    _format_channel_label(cell, channel, display, channel_keys)
                     _put(ws, row, site_column, _site_value(mapping.site), fill=fill)
                     _pi_values(ws, row, site_column + 1, values, flags, factor, number_format, fill)
                     row += 1
@@ -429,7 +430,7 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
                         [5.5, 9, 7.875, 8.125, 9.25, 9, 5.75],
                     )[offset][:block_width]
                     _widths(ws, start, widths)
-                    _channel_comment(ws.cell(header_row, start), channel, display, sum(widths))
+                    _format_channel_label(ws.cell(header_row, start), channel, display, channel_keys, sum(widths))
                     for data_row, (mapping, values, flags) in enumerate(by_channel[channel], header_row + 2):
                         _put(ws, data_row, start, _site_value(mapping.site))
                         _pi_values(ws, data_row, start + 1, values, flags, factor, number_format)
@@ -440,7 +441,7 @@ def _write_pi(ws, spots, factor, unit, column=2, *, wide=False, detail=False, ch
                 row = header_row + band_height + 4
 
 
-def _write_dcr(ws, rows, config):
+def _write_dcr(ws, rows, config, *, channel_keys=None):
     sites = list(dict.fromkeys(row.site for row in rows))
     channels = list(dict.fromkeys(row.channel for row in rows))
     channels = dcr_channel_order(channels, _mappings(config), config.settings.use_priority) or channels
@@ -464,10 +465,10 @@ def _write_dcr(ws, rows, config):
         pcb = config.settings.board_type == "PCB"
         _widths(ws, 2, [_label_width(labels.values(), 15.875 if pcb else 15.375), *([9 if pcb else 7.875] * len(sites))])
     for row, channel in enumerate(channels, 5):
-        _channel_comment(ws.cell(row, 3 if small else 2), channel, labels[channel])
+        _format_channel_label(ws.cell(row, 3 if small else 2), channel, labels[channel], channel_keys)
 
 
-def _write_caps(ws, rows, spd, config):
+def _write_caps(ws, rows, spd, config, *, channel_keys=None):
     sites = list(dict.fromkeys(row["site"] for row in rows))
     channels = list(dict.fromkeys(row["channel"] for row in rows))
     values = sorted({row["capacitance_f"] for row in rows}, key=lambda value: (value is None, value or 0))
@@ -505,7 +506,7 @@ def _write_caps(ws, rows, spd, config):
                     rank = priorities.get(channel)
                     _put(ws, row, 2, rank if isinstance(rank, int) else None)
                 cell = _put(ws, row, channel_column, channel_labels[channel], size=11 if small else 12)
-                _channel_comment(cell, channel, channel_labels[channel])
+                _format_channel_label(cell, channel, channel_labels[channel], channel_keys)
                 for column, site in enumerate(sites, site_column):
                     count = lookup.get((channel, site, value), 0) if (channel, site) in mapped else None
                     _put(ws, row, column, count, number_format="0_ " if small else "General")
@@ -518,8 +519,9 @@ def _write_caps(ws, rows, spd, config):
 
 
 def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData | None,
-                 output_path: str | Path, progress=None, cancel=None) -> ReportResult:
-    """Write a complete workbook atomically; failures never replace an existing report."""
+                 output_path: str | Path, progress=None, cancel=None, *,
+                 channel_keys: dict[tuple[str, str], str] | None = None) -> ReportResult:
+    """Write the workbook atomically. Validation can collect original channel keys in memory."""
     checkpoint(cancel)
     target = Path(output_path).expanduser().resolve()
     if target.suffix.lower() != ".xlsx":
@@ -559,15 +561,15 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                 ws = _base_sheet(wb, name, config, kind, ts, page_title=heading)
                 image_bottom = 4
                 if kind == "100":
-                    _write_100(ws, payload, factor, unit, config.settings.use_priority)
+                    _write_100(ws, payload, factor, unit, config.settings.use_priority, channel_keys=channel_keys)
                 elif kind == "pi":
                     _write_pi(ws, payload, factor, unit,
                               wide=len({mapping.site for mapping, _, _ in payload}) > 8,
-                              use_priority=config.settings.use_priority, pcb=pcb)
+                              use_priority=config.settings.use_priority, pcb=pcb, channel_keys=channel_keys)
                 elif kind == "dcr":
-                    _write_dcr(ws, payload, config)
+                    _write_dcr(ws, payload, config, channel_keys=channel_keys)
                 elif kind == "cap":
-                    _write_caps(ws, payload, spd, config)
+                    _write_caps(ws, payload, spd, config, channel_keys=channel_keys)
                 elif kind == "placement":
                     for side_index, side in enumerate(payload):
                         checkpoint(cancel)
@@ -581,7 +583,7 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                                    if plot_group(m) == group], factor, unit, column=16,
                               wide=len({mapping.site for mapping in _mappings(config, ts)}) > 8, detail=True,
                               channel_order=list(dict.fromkeys(mapping.channel for mapping in _mappings(config, ts))),
-                              use_priority=config.settings.use_priority, pcb=pcb)
+                              use_priority=config.settings.use_priority, pcb=pcb, channel_keys=channel_keys)
                 last_column = max(ws.max_column, 30 if kind == "placement" else 23 if kind == "group" else 2)
                 ws.print_area = f"A1:{get_column_letter(last_column)}{max(ws.max_row, image_bottom)}"
             checkpoint(cancel)

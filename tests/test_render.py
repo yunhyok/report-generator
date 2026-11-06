@@ -1,5 +1,3 @@
-from functools import wraps
-
 import numpy as np
 from PIL import Image
 import pytest
@@ -13,13 +11,13 @@ from report_generator.core.touchstone import (
 )
 
 
-@pytest.mark.parametrize("names,title,legend", [
-    (("", ""), "G", None),
-    (("Alias_A", "Alias_A"), "Alias_A", None),
-    (("Alias_A", ""), "G", ["Alias_A (RAW) / SITE0", "RAW / SITE1"]),
-    (("_Rail$X$", "Alias_B"), "G", ["_Rail$X$ (RAW) / SITE0", "Alias_B (RAW) / SITE1"]),
+@pytest.mark.parametrize("names,title", [
+    (("", ""), "G"),
+    (("Alias_A", "Alias_A"), "G"),
+    (("Alias_A", ""), "G"),
+    (("_Rail$X$", "Alias_B"), "G"),
 ])
-def test_group_display_names_keep_members_and_show_partial_site_aliases(tmp_path, monkeypatch, names, title, legend):
+def test_group_display_names_keep_title_and_curves_without_legend(tmp_path, monkeypatch, names, title):
     config = ReportConfig(mappings=[
         ChannelMapping(index + 1, channel="RAW", site=f"SITE{index}", group="G", display_name=name)
         for index, name in enumerate(names)
@@ -31,19 +29,18 @@ def test_group_display_names_keep_members_and_show_partial_site_aliases(tmp_path
     captured = {}
     def capture(figure, path):
         ax = figure.axes[0]
-        captured["title"] = ax.get_title()
-        captured["lines"] = len(ax.lines)
-        actual = ax.get_legend()
-        captured["legend"] = [text.get_text() for text in actual.get_texts()] if actual else None
-        if actual:
-            assert all(not text.get_parse_math() for text in actual.get_texts())
+        captured.update(title=ax.get_title(), lines=len(ax.lines), axes_legend=ax.get_legend(),
+                        figure_legends=figure.legends, right=ax.get_position().x1)
         return str(path)
     monkeypatch.setattr(render, "_finish", capture)
     render.render_group_plot(ts, config, "G", tmp_path / "aliases.png")
-    assert captured == {"title": title, "lines": 2, "legend": legend}
+    assert captured["title"] == title
+    assert captured["lines"] == 2
+    assert captured["axes_legend"] is None and not captured["figure_legends"]
+    assert captured["right"] > .95
 
 
-def test_many_mixed_names_render_outside_axes_and_inside_png(tmp_path, monkeypatch):
+def test_many_mixed_names_use_full_plot_width_without_legend(tmp_path, monkeypatch):
     count = 36
     config = ReportConfig(mappings=[
         ChannelMapping(index + 1, channel=f"RAW_RAIL_{index:02}", site=f"SITE{index}",
@@ -55,27 +52,18 @@ def test_many_mixed_names_render_outside_axes_and_inside_png(tmp_path, monkeypat
                        np.logspace(-2, 1, 30)[:, None] * np.arange(1, count + 1)[None, :])
     captured = {}
     original = render.FigureCanvasAgg.print_png
-    @wraps(original)
     def capture(canvas, filename, *args, **kwargs):
         canvas.draw()
         ax = canvas.figure.axes[0]
-        legend = ax.get_legend()
-        box = legend.get_window_extent(canvas.get_renderer())
-        bounds = canvas.figure.bbox
-        assert box.x0 >= ax.bbox.x1
-        assert box.y1 == pytest.approx(ax.bbox.y1)
-        assert box.x0 >= bounds.x0 and box.x1 <= bounds.x1
-        assert box.y0 >= bounds.y0 and box.y1 <= bounds.y1
-        assert ax.bbox.width >= 1000 and ax.bbox.height >= 400
+        assert ax.get_legend() is None and not canvas.figure.legends
+        assert ax.get_position().x1 > .95
+        assert ax.bbox.width >= 1100 and ax.bbox.height >= 400
         assert len(ax.lines) == count
-        captured["labels"] = [text.get_text() for text in legend.get_texts()]
         return original(canvas, filename, *args, **kwargs)
     monkeypatch.setattr(render.FigureCanvasAgg, "print_png", capture)
     path = render.render_group_plot(ts, config, "Mixed_names", tmp_path / "mixed-names.png")
-    assert captured["labels"] == [
-        f"VDD_RAIL_{i:02} (RAW_RAIL_{i:02}) / SITE{i}" for i in range(count)]
     with Image.open(path) as image:
-        assert image.width > 1320 and image.height > 594
+        assert image.size == (1320, 594)
 
 
 def test_geometry_rotation_bottom_mirror_and_unknown_dimensions(tmp_path, monkeypatch):
@@ -121,7 +109,10 @@ def test_group_plot_selected_ports_units_and_gaps(tmp_path, monkeypatch):
     original = render.FigureCanvasAgg.print_png
     def capture(canvas, filename, *args, **kwargs):
         ax = canvas.figure.axes[0]
-        captured["lines"] = [(line.get_label(), line.get_ydata().copy()) for line in ax.lines]
+        assert ax.get_legend() is None and not canvas.figure.legends
+        if isinstance(filename, str):
+            assert ax.get_position().x1 > .95
+        captured["lines"] = [line.get_ydata().copy() for line in ax.lines]
         captured["frequencies"] = ax.lines[0].get_xdata() * 1e6
         captured["background"] = canvas.figure.get_facecolor()
         captured["markers"] = [line.get_marker() for line in ax.lines]
@@ -129,14 +120,53 @@ def test_group_plot_selected_ports_units_and_gaps(tmp_path, monkeypatch):
     monkeypatch.setattr(render.FigureCanvasAgg, "print_png", capture)
     render.render_group_plot(ts, config, "G", tmp_path / "plot.png")
     assert len(captured["lines"]) == 1
-    assert captured["lines"][0][0] == "VDD / 0"
-    values = captured["lines"][0][1]
+    values = captured["lines"][0]
     assert values[0] == pytest.approx(1000 * 2**.5)
     assert values[-1] == 5000
     assert np.isnan(values[1:-1]).all()
     assert 1e6 in captured["frequencies"]
     assert captured["background"] == (1, 1, 1, 1)
     assert captured["markers"] == ["None"]
+
+
+def test_ranked_mixed_site_channel_group_has_no_right_legend(tmp_path, monkeypatch):
+    config = ReportConfig(mappings=[
+        ChannelMapping(1, channel="RAIL_A", site="SITE0", group="5순위", display_name="Core Rail"),
+        ChannelMapping(2, channel="RAIL_B", site="SITE1", group="5순위"),
+    ])
+    ts = TouchstoneData("synthetic.s2p", {}, [Port(1, "P1"), Port(2, "P2")],
+                        np.array([1e3, 1e6, 1e9]), np.array([[1, 2], [2, 3], [3, 4]], dtype=complex))
+
+    def capture(figure, path):
+        ax = figure.axes[0]
+        assert ax.get_title() == "5순위"
+        assert ax.get_xlabel() == "Frequency [MHz]"
+        assert ax.get_ylabel() == "|Zii| [mΩ]"
+        assert len(ax.lines) == 2
+        assert ax.get_legend() is None and not figure.legends
+        assert ax.get_position().x1 > .95
+        return str(path)
+
+    monkeypatch.setattr(render, "_finish", capture)
+    render.render_group_plot(ts, config, "5순위", tmp_path / "ranked-mixed.png")
+
+
+def test_single_explicit_group_keeps_group_title_without_legend(tmp_path, monkeypatch):
+    config = ReportConfig(mappings=[
+        ChannelMapping(1, channel="RAIL", site="SITE0", group="5순위", display_name="Core Rail"),
+    ])
+    ts = TouchstoneData("synthetic.s1p", {}, [Port(1, "P1")], np.array([1e3, 1e6]),
+                        np.array([[1], [2]], dtype=complex))
+
+    def capture(figure, path):
+        ax = figure.axes[0]
+        assert ax.get_title() == "5순위"
+        assert len(ax.lines) == 1
+        assert ax.get_legend() is None and not figure.legends
+        return str(path)
+
+    monkeypatch.setattr(render, "_finish", capture)
+    render.render_group_plot(ts, config, "5순위", tmp_path / "single-ranked.png")
 
 
 @pytest.mark.parametrize("board_type,width,factor,unit", [("MLO", None, 1000, "mΩ"), ("PCB", 2.5, 1, "Ω")])
@@ -162,17 +192,15 @@ def test_group_plot_solid_width_and_distinct_site_channel_colors(
         assert all(line.get_linewidth() == (1.0 if width is None else width) for line in ax.lines)
         colors = [line.get_color() for line in ax.lines]
         assert len(set(colors)) == count
+        assert ax.get_legend() is None and not figure.legends
         if count <= len(render.COLORS):
             assert colors == render.COLORS[:count]
         assert ax.get_ylabel() == f"|Zii| [{unit}]"
-        assert [text.get_text() for text in ax.get_legend().get_texts()] == [
-            line.get_label() for line in ax.lines]
         for line, mapping in zip(ax.lines, config.mappings):
             frequency, magnitude = plot_impedance(ts, mapping.port_index)
             np.testing.assert_array_equal(line.get_xdata(), frequency / 1e6)
             np.testing.assert_array_equal(line.get_ydata(), magnitude * factor)
             assert np.isnan(line.get_ydata()[frequency == 1e6]).all()
-            assert line.get_label() == f"{mapping.display_name} ({mapping.channel}) / {mapping.site}"
         return str(path)
 
     monkeypatch.setattr(render, "_finish", capture)

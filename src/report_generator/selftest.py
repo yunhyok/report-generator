@@ -104,11 +104,11 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 assert [label for label, _ in images[:2]] == ["CAP Top", "CAP Bottom"]
                 book = load_workbook(report.path, data_only=True)
                 pi = book["PI ALL@100MHz"]
-                assert book["VDD_CORE_IO"]["A1"].value == "VDD_CORE_IO"
-                assert any(label == "VDD_CORE_IO · Load rails" for label, _ in images)
+                assert book["Load rails"]["A1"].value == "Load rails"
+                assert any(label == "Load rails" for label, _ in images)
                 priority_column = next(cell.column for cell in pi[4] if cell.value == "Priority")
                 assert pi.cell(5, priority_column).value == 1
-                assert pi["C5"].value == "VDD_CORE_IO" and pi["C5"].comment.text == "POWER"
+                assert pi["C5"].value == "VDD_CORE_IO" and pi["C5"].comment is None
                 assert pi["A2"].value == "* 1kHz ~ 1GHz : Automatic Frequency Sweep"
                 maximum_column = next(cell.column for cell in pi[4] if cell.value == "MAX.")
                 assert pi.cell(5, maximum_column).value == 1000

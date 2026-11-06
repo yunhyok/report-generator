@@ -101,14 +101,16 @@ def test_preview_and_export_plot_and_detail_sheet_order_match(tmp_path, monkeypa
     assert not [payload for kind, payload in results if kind == "error"]
     report, images = next(payload for kind, payload in results if kind == "result")
     aliases = [f"Alias {CHANNELS.index(channel)}" for channel in ORDERED]
-    assert report.sheets == ["PI ALL@100MHz", "PI ALL", *aliases]
-    assert [name for name, _ in images] == [f"{alias} · {channel}" for alias, channel in zip(aliases, ORDERED)]
-    assert titles == aliases * 2  # Embedded Excel plots and separate preview plots.
+    page_names = aliases if blank else ORDERED
+    assert report.sheets == ["PI ALL@100MHz", "PI ALL", *page_names]
+    image_names = [f"{alias} · {channel}" for alias, channel in zip(aliases, ORDERED)] if blank else ORDERED
+    assert [name for name, _ in images] == image_names
+    assert titles == page_names * 2  # Embedded Excel plots and separate preview plots.
     book = openpyxl.load_workbook(report.path, data_only=True)
     try:
         assert book.sheetnames == report.sheets
-        for alias, channel in zip(aliases, ORDERED):
-            sheet = book[alias]
+        for page, alias, channel in zip(page_names, aliases, ORDERED):
+            sheet = book[page]
             assert len(sheet._images) == 1
             assert sheet["Q5"].value == alias
             assert sheet["Q6"].value == alias
@@ -116,7 +118,7 @@ def test_preview_and_export_plot_and_detail_sheet_order_match(tmp_path, monkeypa
             assert sheet["S6"].value == CHANNELS.index(channel) + 8
     finally:
         book.close()
-    actual, _ = inspect_workbook(report.path)
+    actual, _ = inspect_workbook(report.path, mappings=config.mappings)
     expected = _expected(config, None, ts, report.omitted)
     detail = compare_values(actual["PI_DETAIL"], expected["PI_DETAIL"])
     assert detail["matches"] == 70

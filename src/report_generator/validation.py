@@ -61,55 +61,81 @@ def _nominal(value):
 
 def _put(records, key, cell, scale=1.):
     if _number(cell.value):
+        if key in records:
+            raise ValueError(f"비교할 채널·사이트가 중복됩니다: {cell.parent.title}!{cell.coordinate}")
         records[key] = {"value": float(cell.value) * scale, "sheet": cell.parent.title, "cell": cell.coordinate}
 
 
-def _channel(cell):
+def _channel(cell, site=None, channel_keys=None, aliases=None, label=None):
+    if channel_keys and (cell.parent.title, cell.coordinate) in channel_keys:
+        return channel_keys[cell.parent.title, cell.coordinate]
     if cell.comment and cell.comment.author == "SPD Report Generator":
         return cell.comment.text
-    return cell.value.strip() if isinstance(cell.value, str) else None
+    text = label if label is not None else cell.value
+    if not isinstance(text, str):
+        return None
+    text = text.strip()
+    if aliases:
+        visible = text
+        if "\n" in text:
+            site_labels = [line.partition(":") for line in text.splitlines()]
+            names = [name.strip() for raw_site, separator, name in site_labels
+                     if separator and _site(raw_site.strip()) == site]
+            if len(names) == 1:
+                visible = names[0]
+        matches = aliases.get((site, visible), set())
+        if len(matches) > 1:
+            raise ValueError(f"비교할 채널 표시명이 모호합니다: {text} / {site} ({cell.parent.title}!{cell.coordinate})")
+        if matches:
+            return next(iter(matches))
+    return text
 
 
-def _pi_tables(sheet):
+def _pi_tables(sheet, channel_keys=None, aliases=None):
     result = {}
     for header in sheet.iter_rows():
         for site_cell in header:
             if str(site_cell.value).upper() != "SITE":
                 continue
             col, row = site_cell.column, site_cell.row
-            frequencies = [(c.column, _frequency(c.value)) for c in header[col:col + 6] if _frequency(c.value)]
+            frequencies = []
+            for cell in header[col:col + 6]:
+                if str(cell.value).upper() == "SITE":
+                    break
+                if label := _frequency(cell.value):
+                    frequencies.append((cell.column, label))
             if not frequencies:
                 continue
             above_cell = sheet.cell(row - 1, col) if row > 1 else None
             above = above_cell.value if above_cell is not None else None
             fixed = (above.rsplit(" / [", 1)[0].strip()
                      if isinstance(above, str) and " / [" in above else None)
-            if fixed is not None and above_cell.comment and above_cell.comment.author == "SPD Report Generator":
-                fixed = _channel(above_cell)
             channel_col = next((c.column for c in reversed(header[:col - 1]) if isinstance(c.value, str) and c.value.upper().startswith("CHANNEL")), None)
             if not fixed and channel_col is None:
                 continue
             unit = above.rsplit(" / ", 1)[-1] if fixed else sheet.cell(row, channel_col).value
             if "[" not in str(unit):
                 unit = sheet.cell(row, frequencies[0][0]).value
-            channel = fixed
+            channel_cell = above_cell if fixed else None
             for r in range(row + 1, sheet.max_row + 1):
                 raw_site = sheet.cell(r, col).value
                 if raw_site is None and not fixed:
                     # A blank row separates ranked channels from the next customer section.
-                    channel = None
+                    channel_cell = None
                     continue
                 if raw_site is None or str(raw_site).upper() == "SITE":
                     break
                 if not fixed and isinstance(sheet.cell(r, channel_col).value, str):
-                    channel = _channel(sheet.cell(r, channel_col))
+                    channel_cell = sheet.cell(r, channel_col)
+                channel = (_channel(channel_cell, _site(raw_site), channel_keys, aliases, fixed)
+                           if channel_cell is not None else None)
                 if channel:
                     for c, label in frequencies:
                         _put(result, (channel, _site(raw_site), label), sheet.cell(r, c), _scale(unit))
     return result
 
 
-def _matrix_tables(sheet, cap=False, site_names=()):
+def _matrix_tables(sheet, cap=False, site_names=(), channel_keys=None, aliases=None):
     result = {}
     headers = []
     for row in sheet.iter_rows():
@@ -135,36 +161,50 @@ def _matrix_tables(sheet, cap=False, site_names=()):
                 continue
         end = headers[index + 1][0] if index + 1 < len(headers) else sheet.max_row + 1
         for r in range(row + 1, end):
-            channel = _channel(sheet.cell(r, col))
-            if not channel:
+            channel_cell = sheet.cell(r, col)
+            if not isinstance(channel_cell.value, str):
                 continue
             for c, site in sites:
+                if not _number(sheet.cell(r, c).value):
+                    continue
+                channel = _channel(channel_cell, site, channel_keys, aliases)
+                if not channel:
+                    continue
                 key = (channel, site, nominal) if cap else (channel, site)
                 _put(result, key, sheet.cell(r, c), 1. if cap else _scale(label))
     # Zero count cells are table padding, not additional capacitor groups.
     return {key: item for key, item in result.items() if not cap or item["value"] != 0}
 
 
-def inspect_workbook(path, site_names=()):
+def inspect_workbook(path, site_names=(), *, channel_keys=None, mappings=()):
     """Align report cells by channel/site/frequency/nominal, never by row number."""
     book = load_workbook(path, data_only=True)
     values = {kind: {} for kind in ("PI", "PI100", "PI_DETAIL", "CAP", "DCR")}
     layout = []
+    aliases = {}
+    for mapping in mappings:
+        if mapping.selected and mapping.confirmed:
+            for label in {mapping.channel, mapping.display_name.strip() or mapping.channel}:
+                aliases.setdefault((_site(mapping.site), label), set()).add(mapping.channel)
+    def collect(kind, records):
+        if values[kind].keys() & records.keys():
+            raise ValueError(f"비교할 채널·사이트가 여러 시트에 중복됩니다: {kind}")
+        values[kind].update(records)
     try:
         for sheet in book:
             normalized = sheet.title.replace("_", " ").upper()
-            pi = _pi_tables(sheet)
+            pi = _pi_tables(sheet, channel_keys, aliases)
             if pi:
                 # A detail tab may also be named PI_ALL. Its plot replaces the table at B4.
                 summary = normalized == "PI ALL" and not (
                     sheet._images and sheet["B4"].value is None and sheet["P4"].value is not None)
-                values["PI" if summary else "PI_DETAIL"].update(pi)
+                collect("PI" if summary else "PI_DETAIL", pi)
             elif sheet.title == "CAP_수량":
-                values["CAP"].update(_matrix_tables(sheet, cap=True, site_names=site_names))
+                collect("CAP", _matrix_tables(sheet, cap=True, site_names=site_names, channel_keys=channel_keys, aliases=aliases))
             elif normalized == "DCR":
-                values["DCR"].update(_matrix_tables(sheet, site_names=site_names))
+                collect("DCR", _matrix_tables(sheet, site_names=site_names, channel_keys=channel_keys, aliases=aliases))
             elif normalized == "PI ALL@100MHZ":
-                values["PI100"].update({(*key, "100MHz"): item for key, item in _matrix_tables(sheet, site_names=site_names).items()})
+                collect("PI100", {(*key, "100MHz"): item for key, item in _matrix_tables(sheet, site_names=site_names, channel_keys=channel_keys, aliases=aliases).items()})
             fonts, fills = Counter(), Counter()
             bold = numeric = populated = 0
             for row in sheet.iter_rows():
@@ -240,6 +280,8 @@ def _html(audit):
         body += "<h2>실제 프로그램 계산과 내보낸 셀</h2>" + table(audit["production_checks"])
     if "reference_comparison" in audit:
         body += f"<h2>참조 문서와 비교: {html.escape(audit['reference_status'])}</h2><p>참조와의 차이만으로 프로그램 오류를 뜻하지 않습니다. 입력 버전·선택 채널·모델 수정값을 함께 확인하세요.</p>" + table(audit["reference_comparison"])
+        if "reference_error" in audit:
+            body += f"<p>{html.escape(audit['reference_error'])}</p>"
     body += "<h2>상세 근거 · 서식 · 입력 정보</h2><pre>" + html.escape(json.dumps(audit, ensure_ascii=False, indent=2)) + "</pre>"
     return '<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>보고서 검증</title><style>body{background:#202226;color:#eceef1;font:16px/1.6 system-ui;margin:2rem}h1,h2{color:#8fc1ff}table{border-collapse:collapse}td,th{border:1px solid #66717e;padding:.4rem 1rem}th,pre{background:#2b2e34}pre{padding:1rem;white-space:pre-wrap;overflow-wrap:anywhere}</style>' + body + "</html>"
 
@@ -316,20 +358,24 @@ def validate_project(project_path, output_path, reference_path=None, *, progress
         audit["selected_mappings"] = [asdict(m) for m in config.mappings if m.selected]
         with tempfile.TemporaryDirectory(prefix="report-validation-", dir=output.parent) as folder:
             staged = Path(folder) / output.name
-            result = build_report(config, spd, ts, staged, progress=progress, cancel=cancel)
+            channel_keys = {}
+            result = build_report(config, spd, ts, staged, progress=progress, cancel=cancel, channel_keys=channel_keys)
             site_names = {_site(row.site) for row in [*config.mappings, *config.dcr]}
-            actual, layout = inspect_workbook(staged, site_names)
+            actual, layout = inspect_workbook(staged, site_names, channel_keys=channel_keys)
             expected = _expected(config, spd, ts, result.omitted)
             audit["production_checks"] = {kind: compare_values(actual[kind], expected[kind]) for kind in actual}
             audit["layout"] = layout
             audit["sheets"], audit["omitted"], audit["warnings"] = result.sheets, result.omitted, result.warnings
             if reference:
-                reference_values, reference_layout = inspect_workbook(reference, site_names)
-                audit["reference_comparison"] = {kind: compare_values(actual[kind], reference_values[kind]) for kind in actual}
-                comparisons = list(audit["reference_comparison"].values())
-                audit["reference_status"] = ("not_comparable" if not any(check["compared"] for check in comparisons) else
-                                             "differences" if any(check["differences"] or check["missing"] or check["extra"] for check in comparisons) else "matches")
-                audit["reference_layout"] = reference_layout
+                try:
+                    reference_values, reference_layout = inspect_workbook(reference, site_names, mappings=config.mappings)
+                    audit["reference_comparison"] = {kind: compare_values(actual[kind], reference_values[kind]) for kind in actual}
+                    comparisons = list(audit["reference_comparison"].values())
+                    audit["reference_status"] = ("not_comparable" if not any(check["compared"] for check in comparisons) else
+                                                 "differences" if any(check["differences"] or check["missing"] or check["extra"] for check in comparisons) else "matches")
+                    audit["reference_layout"] = reference_layout
+                except ValueError as exc:
+                    audit.update(reference_status="not_comparable", reference_error=str(exc), reference_comparison={})
                 audit["reference_note"] = "Differences do not by themselves establish an application defect; verify source revisions and selected mappings."
             checks = audit["production_checks"].values()
             audit["status"] = "passed" if all(not (check["differences"] or check["missing"] or check["extra"]) for check in checks) else "production_difference"

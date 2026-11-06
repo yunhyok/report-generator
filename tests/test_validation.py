@@ -58,6 +58,7 @@ def test_shared_pipeline_export_and_reference_comparison(tmp_path):
     book.save(reference)
     book.close()
     raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["config"]["mappings"][0]["group"] = ""
     raw["config"]["mappings"][0]["display_name"] = "PI_ALL"
     path.write_text(json.dumps(raw), encoding="utf-8")
     output = tmp_path / "checked.xlsx"
@@ -246,7 +247,9 @@ def test_reference_tables_keep_channels_after_rank_section_breaks(tmp_path):
         assert values[kind]["MAIN", "SITE0", "100MHz"]["value"] == pytest.approx(.02)
 
 
-def test_tagged_alias_comments_preserve_distinct_literal_channel_keys_in_all_tables(tmp_path):
+@pytest.mark.parametrize("identity_source", ["legacy_comments", "memory"])
+def test_aliases_preserve_distinct_literal_channel_keys_in_all_tables(tmp_path, identity_source):
+    channel_keys = {}
     def make_book(path, aliases):
         book = Workbook()
         book.remove(book.active)
@@ -279,7 +282,10 @@ def test_tagged_alias_comments_preserve_distinct_literal_channel_keys_in_all_tab
                         sheet.cell(row, 2, index + 1)
                 cell.data_type = "s"
                 if aliases:
-                    cell.comment = Comment(channel, "SPD Report Generator")
+                    if identity_source == "legacy_comments":
+                        cell.comment = Comment(channel, "SPD Report Generator")
+                    else:
+                        channel_keys[sheet.title, cell.coordinate] = channel
         book.save(path)
         book.close()
 
@@ -287,13 +293,90 @@ def test_tagged_alias_comments_preserve_distinct_literal_channel_keys_in_all_tab
     make_book(reference, False)
     make_book(renamed, True)
     expected, _ = inspect_workbook(reference)
-    actual, _ = inspect_workbook(renamed)
+    actual, _ = inspect_workbook(renamed, channel_keys=channel_keys)
     for kind in actual:
         assert {key[0] for key in actual[kind]} == {"=RAW_CHANNEL_001", "RAW / [literal]"}
         check = compare_values(actual[kind], expected[kind])
         assert check["matches"] == 2
         assert not (check["differences"] or check["missing"] or check["extra"])
     assert actual["PI_DETAIL"]["RAW / [literal]", "SITE0", "100MHz"]["value"] == 2
+
+
+def test_unique_display_names_validate_and_compare_without_workbook_notes(tmp_path):
+    path, _, _ = project(tmp_path)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["config"]["mappings"][0]["display_name"] = "=Shown / [mΩ]"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    reference = tmp_path / "reference.xlsx"
+    assert validate_project(path, reference)["status"] == "passed"
+    with_book = load_workbook(reference)
+    try:
+        assert not any(cell.comment for sheet in with_book for row in sheet for cell in row)
+    finally:
+        with_book.close()
+    audit = validate_project(path, tmp_path / "checked.xlsx", reference)
+    assert audit["status"] == "passed"
+    assert audit["reference_status"] == "matches"
+    assert {kind: check["matches"] for kind, check in audit["reference_comparison"].items()} == {
+        "PI": 5, "PI100": 1, "PI_DETAIL": 5, "CAP": 1, "DCR": 1}
+
+
+def test_duplicate_display_names_validate_but_ambiguous_reference_is_not_compared(tmp_path):
+    config = ReportConfig(mappings=[ChannelMapping(site="SITE0", channel=channel, display_name="Shared")
+                                    for channel in ("A", "B")],
+                          dcr=[DcrRow("SITE0", "A", 1), DcrRow("SITE0", "B", 2)])
+    path = tmp_path / "project.report.json"
+    save_project(path, config, {})
+    reference = tmp_path / "reference.xlsx"
+    first = validate_project(path, reference)
+    assert first["production_checks"]["DCR"]["matches"] == 2
+    audit = validate_project(path, tmp_path / "checked.xlsx", reference)
+    assert audit["status"] == "passed"
+    assert audit["reference_status"] == "not_comparable"
+    assert "모호" in audit["reference_error"]
+    assert audit["reference_comparison"] == {}
+
+
+def test_reference_display_names_resolve_by_site_and_multiline_site_labels(tmp_path):
+    config = ReportConfig(mappings=[ChannelMapping(site=f"SITE{site}", channel=channel,
+                                                  display_name=("Shared" if site == 0 else "Logic"))
+                                    for site, channel in ((0, "A"), (1, "A"), (2, "B"))],
+                          dcr=[DcrRow("SITE0", "A", 1), DcrRow("SITE1", "A", 2), DcrRow("SITE2", "B", 3)])
+    path = tmp_path / "project.report.json"
+    save_project(path, config, {})
+    reference = tmp_path / "reference.xlsx"
+    validate_project(path, reference)
+    audit = validate_project(path, tmp_path / "checked.xlsx", reference)
+    assert audit["reference_status"] == "matches"
+    assert audit["reference_comparison"]["DCR"]["matches"] == 3
+
+
+def test_duplicate_unannotated_reference_cells_are_not_silently_overwritten(tmp_path):
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "DCR"
+    sheet.append(["Channel / [Ω]", "SITE0"])
+    sheet.append(["Shared", 1])
+    sheet.append(["Shared", 2])
+    path = tmp_path / "duplicate.xlsx"
+    book.save(path)
+    book.close()
+    with pytest.raises(ValueError, match="중복"):
+        inspect_workbook(path)
+
+
+def test_duplicate_measurements_across_detail_sheets_are_not_silently_overwritten(tmp_path):
+    book = Workbook()
+    book.remove(book.active)
+    for name, value in (("First", 1), ("Second", 2)):
+        sheet = book.create_sheet(name)
+        sheet.append(["Channel / [Ω]", "SITE", "100MHz"])
+        sheet.append(["Shared", "SITE0", value])
+    path = tmp_path / "duplicate-sheets.xlsx"
+    book.save(path)
+    book.close()
+    with pytest.raises(ValueError, match="여러 시트에 중복"):
+        inspect_workbook(path)
 
 
 @pytest.mark.parametrize("author", ["Other Application", "SPD Report Generator "])

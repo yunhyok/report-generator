@@ -1,4 +1,5 @@
 from copy import deepcopy
+import zipfile
 
 import numpy as np
 import pytest
@@ -35,11 +36,8 @@ def numeric_cells(sheet):
 def check_label(cell, value, original):
     assert cell.value == value
     assert cell.data_type == "s"
-    if value == original:
-        assert cell.comment is None
-    else:
-        assert cell.comment.text == original
-        assert cell.comment.author == "SPD Report Generator"
+    assert cell.comment is None
+    if value != original:
         assert cell.alignment.wrap_text
 
 
@@ -57,6 +55,8 @@ def test_all_table_labels_use_display_names_without_changing_numeric_identity(tm
         mapping.display_name = "=Common Display" if aliases == "common" else (
             f"Alias {mapping.channel}" if mapping.site == "SITE0" else "")
     result = report.build_report(config, spd, ts, tmp_path / "aliased.xlsx")
+    with zipfile.ZipFile(result.path) as archive:
+        assert not any(name.startswith("xl/comments/") for name in archive.namelist())
     original, changed = load_workbook(baseline.path), load_workbook(result.path)
     try:
         assert changed.sheetnames[:5] == original.sheetnames[:5]
@@ -79,7 +79,6 @@ def test_all_table_labels_use_display_names_without_changing_numeric_identity(tm
             else:
                 cell = changed["PI ALL"].cell(4 + use_priority, 2 + index * 7)
                 check_label(cell, f"{display} / [mΩ]", channel)
-                assert cell.comment.text == channel
                 baseline_cell = original["PI ALL"].cell(4 + use_priority, 2 + index * 7)
                 assert baseline_cell.value == f"{channel} / [mΩ]"
                 assert baseline_cell.comment is None
@@ -153,8 +152,7 @@ def test_long_display_names_are_literal_wrapped_and_excel_row_height_safe(kind):
         report._write_dcr(sheet, config.dcr, config)
         cell = sheet["C5"]
     assert cell.data_type == "s"
-    assert cell.comment.text == "RAW"
-    assert cell.comment.author == "SPD Report Generator"
+    assert cell.comment is None
     assert cell.alignment.wrap_text
     assert sheet.row_dimensions[cell.row].height == 409
     if kind != "wide_pi":

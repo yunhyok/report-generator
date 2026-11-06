@@ -43,7 +43,7 @@ def run_job(action, payload, messages, cancellation):
                 raise ValueError("\n".join(errors) or "입력 파일을 선택하세요.")
             result = (spd, ts, suggest_mappings(spd, ts), errors)
         else:
-            from .core.mapping import group_presentation, validate_mappings
+            from .core.mapping import group_title, validate_mappings
             from .core.project import validate_config
             from .core.report import build_report, plot_groups
             from .core.render import PLACEMENT_SIDES, render_placement, render_group_plot
@@ -77,7 +77,7 @@ def run_job(action, payload, messages, cancellation):
                         raise CancelledError("작업이 취소되었습니다.")
                     path = folder / f"plot-{index}.png"
                     render_group_plot(ts, config, group, path, display_units=display_units)
-                    title, _ = group_presentation(group, members)
+                    title = group_title(group, members)
                     images.append((f"{title} · {group}" if title != group else group, str(path)))
                 result = (report, images)
             else:

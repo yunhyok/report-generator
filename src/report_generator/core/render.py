@@ -16,7 +16,7 @@ from matplotlib.ticker import FuncFormatter, NullFormatter
 
 from .models import ReportConfig, SpdData, TouchstoneData
 from .capacitance import format_capacitance, resolved_capacitance
-from .mapping import group_presentation, plot_group
+from .mapping import group_title, plot_group
 from .touchstone import pi_display_units, plot_frequency_bounds, plot_impedance
 
 
@@ -52,11 +52,7 @@ def _finish(fig: Figure, output_path: str | Path) -> str:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     canvas = FigureCanvasAgg(fig)
-    legend = fig.axes[0].get_legend()
-    if legend is not None:
-        canvas.print_figure(str(path), format="png", bbox_inches="tight", bbox_extra_artists=[legend])
-    else:
-        canvas.print_png(str(path))
+    canvas.print_png(str(path))
     fig.clear()
     return str(path)
 
@@ -77,7 +73,7 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
                 plot_group(m) == group and m.port_index is not None]
     if not mappings:
         raise ValueError("그룹에 선택한 Touchstone 포트가 없습니다.")
-    title, show_names = group_presentation(group, mappings)
+    title = group_title(group, mappings)
     fig = Figure(figsize=(12, 5.4), dpi=110, facecolor="white")
     ax = fig.add_subplot(111, facecolor="white")
     factor, unit = display_units if display_units is not None else pi_display_units(ts, config)
@@ -91,9 +87,7 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
         # Beyond the fixed palette, golden-ratio hue steps keep adjacent curves distinct.
         color = COLORS[index] if len(mappings) <= len(COLORS) else hsv_to_rgb(index * .61803398875 % 1, .72, .60)
         ax.plot(frequency / 1e6, magnitude * factor, color=color,
-                linestyle="solid", linewidth=config.settings.plot_line_width_pt,
-                label=f"{m.display_name.strip()} ({m.channel}) / {m.site}"
-                if m.display_name.strip() else f"{m.channel} / {m.site}")
+                linestyle="solid", linewidth=config.settings.plot_line_width_pt)
         plotted += 1
     if not plotted:
         raise ValueError("그룹에 그래프로 표시할 유효한 임피던스가 없습니다.")
@@ -106,13 +100,6 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
     if bounds and bounds[0] < bounds[1]:
         ax.set_xlim(bounds[0] / 1e6, bounds[1] / 1e6)
     ax.set_title(title, fontproperties=TITLE_FONT, pad=15, parse_math=False)
-    if show_names:
-        legend = ax.legend(handles=ax.lines, labels=[line.get_label() for line in ax.lines],
-                           prop=FontProperties(family="Malgun Gothic", size=9),
-                           loc="upper left", bbox_to_anchor=(1.02, 1), borderaxespad=0)
-        legend.set_in_layout(False)
-        for text in legend.get_texts():
-            text.set_parse_math(False)
     ax.set_xlabel("Frequency [MHz]")
     ax.set_ylabel(f"|Zii| [{unit}]")
     ax.grid(True, which="major", color="#d8d8d8", linewidth=.7)
