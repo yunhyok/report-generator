@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from math import ceil, isfinite
 import os
 from pathlib import Path
@@ -7,6 +8,7 @@ import re
 import tempfile
 
 import numpy as np
+from PIL import ImageFont
 from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.drawing.image import Image
@@ -62,12 +64,28 @@ def _channel_priorities(mappings, enabled):
 
 def _widths(ws, column, widths):
     for offset, width in enumerate(widths):
-        ws.column_dimensions[get_column_letter(column + offset)].width = width
+        key = get_column_letter(column + offset)
+        if key in ws.column_dimensions:
+            width = max(width, ws.column_dimensions[key].width)
+        ws.column_dimensions[key].width = width
 
 
-def _label_width(labels, minimum):
-    return min(255, max(minimum, max((len(line) * 1.1 for label in labels
-                                    for line in str(label).splitlines()), default=minimum)))
+@lru_cache(maxsize=4)
+def _label_font(size, bold):
+    try:
+        return ImageFont.truetype("malgunbd.ttf" if bold else "malgun.ttf", size,
+                                  layout_engine=ImageFont.Layout.BASIC)
+    except OSError:
+        return None
+
+
+@lru_cache(maxsize=2048)
+def _label_width(line, points, bold):
+    size = round(points * 96 / 72)
+    font = _label_font(size, bold)
+    pixels = font.getlength(line) if font else len(line) * size
+    # Excel column units are digit widths; allow for cell padding at 96 dpi.
+    return ceil((pixels + 8) / 7)
 
 
 def _channel_label(channel, mappings, sites=None):
@@ -79,16 +97,23 @@ def _channel_label(channel, mappings, sites=None):
     return "\n".join(f"{site}: {name}" for site, name in names.items())
 
 
-def _format_channel_label(cell, channel, label, channel_keys, width=None):
-    if label != channel:
-        if channel_keys is not None:
-            channel_keys[cell.parent.title, cell.coordinate] = channel
+def _format_channel_label(cell, channel, label, channel_keys, span=1):
+    ws = cell.parent
+    if channel_keys is not None and label != channel:
+        channel_keys[ws.title, cell.coordinate] = channel
+    widths = [_label_width(line, cell.font.sz, cell.font.bold) for line in cell.value.splitlines() or [""]]
+    columns = [ws.column_dimensions[get_column_letter(i)] for i in range(cell.column, cell.column + span)]
+    available = sum(col.width for col in columns)
+    if max(widths) > available:
+        per_column = min(255, ceil(max(widths) / span))
+        for col in columns:
+            col.width = max(col.width, per_column)
+        available = sum(col.width for col in columns)
+    lines = sum(max(1, ceil(width / available)) for width in widths)
+    if lines > 1:
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        width = width or cell.parent.column_dimensions[cell.column_letter].width
-        lines = sum(max(1, ceil(len(line) * 1.1 / width)) for line in str(cell.value).splitlines())
-        if lines > 1:
-            dimensions = cell.parent.row_dimensions[cell.row]
-            dimensions.height = min(409, max(dimensions.height or 16.5, 16.5 * lines))
+        dimensions = ws.row_dimensions[cell.row]
+        dimensions.height = min(409, max(dimensions.height or 16.5, 16.5 * lines))
 
 
 def _mappings(config, ts=None, summary=False):
@@ -232,7 +257,7 @@ def _base_sheet(wb, name, config, kind, ts=None):
         title.font = _font(24, True)
         title.fill = WHITE
         title.alignment = Alignment(vertical="center")
-    ws.row_dimensions[1].height = 38.25
+        ws.row_dimensions[1].height = 38.25
     if kind in {"100", "pi"} and ts is not None:
         def frequency_label(value):
             for scale, suffix in ((1e9, "GHz"), (1e6, "MHz"), (1e3, "kHz")):
@@ -291,12 +316,12 @@ def _write_100(ws, spots, *, use_priority=False, channel_keys=None):
         data[channel] = [labels[channel], *values, deviation, maximum, average] if small else [labels[channel], maximum, average, deviation, *values]
     if small:
         headers = [f"Channel / [{unit}]", *sites, "편차", "MAX.", "AVG."]
-        widths = [_label_width(labels.values(), 36.75), *([9] * (len(sites) + 3))]
+        widths = [36.75, *([9] * (len(sites) + 3))]
         deviation_column, site_column = 3 + len(sites) + use_priority, 3 + use_priority
     else:
         headers = [f"Channel / [{unit}]", "MAX.", "AVG.", "편차", *sites]
         numeric_width = 6.875 if unit == "Ω" else 9
-        widths = [_label_width(labels.values(), 16.125), numeric_width, numeric_width,
+        widths = [16.125, numeric_width, numeric_width,
                   7.75 if unit == "Ω" else 6.75, *([numeric_width] * len(sites))]
         deviation_column, site_column = 5 + use_priority, 6 + use_priority
     if use_priority:
@@ -316,10 +341,10 @@ def _write_100(ws, spots, *, use_priority=False, channel_keys=None):
             for offset, value in enumerate(values):
                 _put(ws, row, 2 + offset, value,
                      number_format=NUMBER if offset > use_priority else None)
-            _format_channel_label(ws.cell(row, 2 + use_priority), channel, labels[channel], channel_keys)
             ws.cell(row, deviation_column).number_format = "0.0%"
             if not small:
                 ws.cell(row, 2 + use_priority).font = _font(bold=True)
+            _format_channel_label(ws.cell(row, 2 + use_priority), channel, labels[channel], channel_keys)
             for column, site in enumerate(sites, site_column):
                 if flags.get((channel, site)):
                     ws.cell(row, column).number_format = '0.000"*"'
@@ -355,7 +380,6 @@ def _write_pi(ws, spots, column=2, *, wide=False, detail=False, channel_order=()
               use_priority=False, channel_keys=None):
     channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
     by_channel = {channel: [spot for spot in spots if spot[0].channel == channel] for channel in channels}
-    labels = [mapping.display_name.strip() or mapping.channel for mapping, _, _ in spots]
     priorities = _channel_priorities([m for m, _, _ in spots], use_priority)
     sections = _sections(channels, priorities, use_priority)
     if not wide:
@@ -367,7 +391,7 @@ def _write_pi(ws, spots, column=2, *, wide=False, detail=False, channel_order=()
         _table(ws, headers, [], column=column)
         channel_column = column + priority
         site_column = channel_column + 1
-        widths = ([9] if priority else []) + [_label_width(labels, 16.125 if detail else 30.5), 9]
+        widths = ([9] if priority else []) + [16.125 if detail else 30.5, 9]
         widths += [9] * 5 if detail else [9.5, 9.125, 9.125, 9.125, 9.125, 9]
         _widths(ws, column, widths)
         row = 5
@@ -431,7 +455,7 @@ def _write_pi(ws, spots, column=2, *, wide=False, detail=False, channel_order=()
                         [5.5, 9, 7.875, 8.125, 9.25, 9, 5.75],
                     )[offset][:block_width]
                     _widths(ws, start, widths)
-                    _format_channel_label(ws.cell(header_row, start), channel, display, channel_keys, sum(widths))
+                    _format_channel_label(ws.cell(header_row, start), channel, display, channel_keys, block_width)
                     for data_row, (mapping, values, flags) in enumerate(entries, header_row + 2):
                         _put(ws, data_row, start, _site_value(mapping.site))
                         _pi_values(ws, data_row, start + 1, values, flags, factor, wide)
@@ -461,9 +485,9 @@ def _write_dcr(ws, rows, config, *, channel_keys=None):
     headers = (["Priority"] if small else []) + ["Channel / [mΩ]", *sites]
     _table(ws, headers, data, number_columns=range(2 if small else 1, len(headers)))
     if small:
-        _widths(ws, 2, [8.25, _label_width(labels.values(), 36.75), *([9.5] * len(sites))])
+        _widths(ws, 2, [8.25, 36.75, *([9.5] * len(sites))])
     else:
-        _widths(ws, 2, [_label_width(labels.values(), 15.875), *([9] * len(sites))])
+        _widths(ws, 2, [15.875, *([9] * len(sites))])
     for row, channel in enumerate(channels, 5):
         _format_channel_label(ws.cell(row, 3 if small else 2), channel, labels[channel], channel_keys)
 
@@ -484,9 +508,9 @@ def _write_caps(ws, rows, spd, config, *, channel_keys=None):
     channel_column = 3 if use_priority else 2
     site_column = channel_column + 1
     if small:
-        widths = [_label_width(channel_labels.values(), 30.5), *([6.625] * len(sites))]
+        widths = [30.5, *([6.625] * len(sites))]
     else:
-        widths = [_label_width(channel_labels.values(), 15.625), *([9] * len(sites))]
+        widths = [15.625, *([9] * len(sites))]
     _widths(ws, 2, ([8.25] if use_priority else []) + widths)
     row_number = 4
     for value in values:

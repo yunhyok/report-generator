@@ -49,6 +49,8 @@ def test_units_spots_formula_metrics_and_same_chart_source(tmp_path):
     assert w["PI ALL@100MHz"]["F5"].number_format == "0.0%"
     assert w["VDD"]["S5"].value == pytest.approx(2**.5)
     assert w["VDD"]["A1"].value is None
+    detail = w["VDD"]
+    assert (detail.row_dimensions[1].height or detail.sheet_format.defaultRowHeight) == 16.5
     assert [w["VDD"].cell(4, column).value for column in (16, 17, 18)] == ["Priority", "Channel / [Ω]", "SITE"]
     assert w["VDD"]._images[0].anchor._from.col == 1
     assert w["VDD"]._images[0].anchor._from.row == 1
@@ -56,6 +58,7 @@ def test_units_spots_formula_metrics_and_same_chart_source(tmp_path):
     assert w["PI ALL"]["B4"].font.name == "맑은 고딕"
     assert w["PI ALL"]["A1"].font.sz == 24
     assert w["PI ALL"]["A1"].value == "Power Impedance"
+    assert w["PI ALL"].row_dimensions[1].height == 38.25
     assert w["PI ALL"]["H5"].font.bold
     assert not w["PI ALL"]["G5"].font.bold
     for sheet in w:
