@@ -43,6 +43,7 @@ def mapped_nets(spd: SpdData, config: ReportConfig):
 
 
 def placement_components(spd: SpdData, config: ReportConfig, side: str):
+    """Select physical locations regardless of component activation status."""
     return [c for c in spd.components if any(p.side == side for p in c.pads) or
             (c.side.capitalize() == side and c.x_mm is not None and c.y_mm is not None and
              np.isfinite(c.x_mm) and np.isfinite(c.y_mm))]

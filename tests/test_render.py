@@ -326,7 +326,7 @@ def test_cad_placement_context_is_outline_and_cap_colors_follow_reference(tmp_pa
 
 
 @pytest.mark.parametrize("side", ["Top", "Bottom"])
-def test_placement_treats_mixed_status_caps_as_populated_without_legend_counts(tmp_path, monkeypatch, side):
+def test_placement_ignores_cap_activation_status_without_legend_counts(tmp_path, monkeypatch, side):
     def components(statuses):
         return [
             Component("C1", "SMALL", ["RAIL", "GND"], status=statuses[0], side=side,
@@ -348,8 +348,10 @@ def test_placement_treats_mixed_status_caps_as_populated_without_legend_counts(t
         return original(canvas, filename, *args, **kwargs)
 
     monkeypatch.setattr(render.FigureCanvasAgg, "print_png", capture)
-    for label, statuses in (("all-automatic", ("Automatic",) * 3),
-                            ("mixed", ("Enabled", "Disabled", "Unknown"))):
+    cases = [(f"all-{status.lower()}", (status,) * 3)
+             for status in ("Automatic", "Enabled", "Disabled", "Unknown")]
+    cases.append(("mixed", ("Enabled", "Disabled", "Unknown")))
+    for label, statuses in cases:
         spd.components = components(statuses)
         path = tmp_path / f"placement-{side.lower()}-{label}.png"
         render.render_placement(spd, config, side, path)
@@ -361,7 +363,7 @@ def test_placement_treats_mixed_status_caps_as_populated_without_legend_counts(t
                 assert image.size == expected_size
                 assert image.convert("RGBA").tobytes() == expected_pixels
 
-    assert legends == [["100nF", "Unknown capacitance", "Unknown dimensions", "Pin bounds"]] * 2
+    assert legends == [["100nF", "Unknown capacitance", "Unknown dimensions", "Pin bounds"]] * len(cases)
     spd.components = components(("Enabled", "Disabled", "Unknown"))
     assert [(row["capacitance_f"], row["count"]) for row in summarize_caps(spd, config)] == [(100e-9, 1)]
 
