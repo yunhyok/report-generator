@@ -32,6 +32,14 @@ C1 1 2 100n
 .EndC
 .Part CAP_100N Outline = 1mm 0.5mm
 .Component C1 1mm 2mm StartLayer = Signal$TOP AttachLayer = TopAir
+.PartialCkt SOCKET_4P_LGA ExtNode = 1 2
+.EndPartialCkt
+.Connect LGA1 SOCKET_4P_LGA
+1 $Package.Node3::SITE0-POWER
+2 $Package.Node4::GND
+.EndC
+.Part SOCKET_4P_LGA Outline = 5mm 5mm
+.Component LGA1 8mm 2mm StartLayer = Signal$TOP AttachLayer = TopAir
 .Port
 Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
 + PositiveTerminal $Package.Node1::SITE0-POWER
@@ -78,6 +86,13 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 window.fill_mappings()
                 window.fill_caps()
                 window.fill_dcr()
+                socket_row = next(row for row in range(window.model_table.rowCount())
+                                  if window.model_table.item(row, 0).text() == "SOCKET_4P_LGA")
+                window.model_table.item(socket_row, 5).setCheckState(Qt.CheckState.Checked)
+                assert config.excluded_cap_models == ["SOCKET_4P_LGA"]
+                window.tabs.setCurrentIndex(2)
+                app.processEvents()
+                window.grab().save(str(folder / "cap-exclusion.png"))
                 window.tabs.setCurrentIndex(1)
                 app.processEvents()
                 mime = QMimeData()
@@ -122,6 +137,10 @@ Port1_LOAD::SITE0-POWER GenFromCktInstance="LOAD"
                 site_column = next(cell.column for cell in dcr[4] if cell.value == "SITE0")
                 assert dcr.cell(5, site_column).value == 2
                 assert all(sheet.freeze_panes is None for sheet in book)
+                caps = book["CAP_수량"]
+                cap_column = next(cell.column for cell in caps[4] if cell.value == "100nF")
+                assert caps.cell(6, cap_column).value == 1
+                assert "4pF" not in [cell.value for row in caps for cell in row]
                 book.close()
                 window.tabs.setCurrentIndex(3)
                 window.preview_book = report.path

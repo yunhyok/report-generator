@@ -63,6 +63,11 @@ def component_active(component: Component, spd: SpdData) -> bool:
     return component.status in ("Automatic", "Enabled")
 
 
+def cap_included(component: Component, config: ReportConfig) -> bool:
+    return (component.is_cap and component.model_name not in config.excluded_cap_models
+            and component.refdes not in config.excluded_cap_components)
+
+
 def summarize_caps(spd: SpdData, config: ReportConfig) -> list[dict]:
     """Count unique active capacitors on explicitly selected rail nets."""
     grounds = set(spd.ground_nets) | set(config.settings.ground_nets)
@@ -82,7 +87,7 @@ def summarize_caps(spd: SpdData, config: ReportConfig) -> list[dict]:
     for (site, channel), nets in groups.items():
         seen = set()
         for component in spd.components:
-            if component.refdes in seen or not component.is_cap or not component_active(component, spd):
+            if component.refdes in seen or not cap_included(component, config) or not component_active(component, spd):
                 continue
             power_nets = set(component.nets) - grounds
             if not power_nets.intersection(nets) or not set(component.nets).intersection(grounds):

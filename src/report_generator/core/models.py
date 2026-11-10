@@ -153,6 +153,8 @@ class ReportConfig:
     dcr: list[DcrRow] = field(default_factory=list)
     dcr_source_path: str = ""
     channel_settings_source_path: str = ""
+    excluded_cap_models: list[str] = field(default_factory=list)
+    excluded_cap_components: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -405,11 +405,13 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
         cap = QWidget()
         cap_layout = QVBoxLayout(cap)
-        label = QLabel("Automatic·Enabled를 집계하고 Disabled는 제외합니다. 용량은 공칭 주석 → 모델 이름 순으로 읽으며, 미확인 항목도 별도 표시합니다. 수정 예: 100 nF, 4.7 uF (빈칸: 자동 판독).")
+        label = QLabel("CAP 제외: 수량·용량 색상·범례에서 제외. 프로젝트 저장으로 보관.\n집계: Automatic·Enabled. 용량 수정: 100 nF, 4.7 uF · 빈칸: 자동.")
+        label.setToolTip("용량은 공칭 주석 → 모델 이름 순으로 판독합니다. 제외한 행은 편집 표에 남아 체크 해제로 복원할 수 있습니다.")
         label.setWordWrap(True)
         cap_layout.addWidget(label)
         self.cap_tabs = QTabWidget()
-        self.model_table = make_table(["모델", "이름에서 판독", "모델 주석에서 판독", "수정 용량", "근거·상태"])
+        self.model_table = make_table(["모델", "이름에서 판독", "모델 주석에서 판독", "수정 용량", "근거·상태", "CAP 제외"])
+        self.model_table.horizontalHeader().moveSection(5, 1)
         self.model_table.itemChanged.connect(self.model_edited)
         self.cap_tabs.addTab(self.model_table, "모델별 일괄 수정")
         instances = QWidget()
@@ -420,12 +422,17 @@ class MainWindow(QMainWindow):
         instance_layout.addWidget(self.cap_filter)
         self.component_count = QLabel()
         instance_layout.addWidget(self.component_count)
-        self.component_table = make_table(["RefDes", "모델", "상태", "Net", "현재 용량", "개별 수정"])
+        self.component_table = make_table(["RefDes", "모델", "상태", "Net", "현재 용량", "개별 수정", "CAP 제외"])
+        self.component_table.setMinimumHeight(110)
+        self.component_table.horizontalHeader().moveSection(6, 1)
         self.component_table.itemChanged.connect(self.component_edited)
         instance_layout.addWidget(self.component_table)
         self.cap_tabs.addTab(instances, "부품별 수정")
         cap_layout.addWidget(self.cap_tabs)
-        tabs.addTab(cap, "CAP")
+        cap_scroll = QScrollArea()
+        cap_scroll.setWidgetResizable(True)
+        cap_scroll.setWidget(cap)
+        tabs.addTab(cap_scroll, "CAP")
         dcr = QWidget()
         dcr_layout = QVBoxLayout(dcr)
         dcr_note = QLabel("<b>사이트와 원래 채널명 또는 보고서 표시명으로 매칭합니다.</b> Excel 파일이나 복사한 표를 가져오며, 붙여넣을 때는 머리글을 포함하세요. 숫자 한 열은 아래 순서로 대응합니다.")
@@ -733,6 +740,9 @@ class MainWindow(QMainWindow):
             values = (model.name, format_capacitance(model.name_capacitance_f) if model.name_capacitance_f is not None else "미확인", format_capacitance(model.comment_capacitance_f) if model.comment_capacitance_f is not None else "미확인", format_capacitance(self.config.model_overrides[model.name]) if model.name in self.config.model_overrides else "", ("충돌 · " if model.conflict else "") + (model.evidence if model.valid else "빈 모델 / 미지정"))
             for col, value in enumerate(values):
                 self.model_table.setItem(row, col, text_item(value, col == 3))
+            excluded = check_item(model.name in self.config.excluded_cap_models)
+            excluded.setToolTip("이 모델의 모든 부품을 CAP 수량 집계·용량 색상·범례에서 제외합니다. 배치 위치는 일반 부품으로 표시합니다.")
+            self.model_table.setItem(row, 5, excluded)
         self.loading_table = False
         self.model_table.resizeColumnsToContents()
         self.model_table.setColumnWidth(0, 230)
@@ -750,6 +760,12 @@ class MainWindow(QMainWindow):
             values = (component.refdes, component.model_name, component.status, ", ".join(component.nets), format_capacitance(value) if value is not None else "미확인", format_capacitance(self.config.component_overrides[component.refdes]) if component.refdes in self.config.component_overrides else "")
             for col, value in enumerate(values):
                 self.component_table.setItem(row, col, text_item(value, col == 5))
+            parent_excluded = component.model_name in self.config.excluded_cap_models
+            excluded = check_item(parent_excluded or component.refdes in self.config.excluded_cap_components)
+            excluded.setToolTip("모델별 제외를 해제하면 개별 제외를 설정할 수 있습니다." if parent_excluded else "이 부품만 CAP 수량 집계·용량 색상·범례에서 제외합니다. 배치 위치는 일반 부품으로 표시합니다.")
+            if parent_excluded:
+                excluded.setFlags(excluded.flags() & ~Qt.ItemFlag.ItemIsEnabled & ~Qt.ItemFlag.ItemIsUserCheckable)
+            self.component_table.setItem(row, 6, excluded)
         self.loading_table = False
 
     def update_cap_override(self, table, item, expected_column, overrides):
@@ -772,11 +788,36 @@ class MainWindow(QMainWindow):
             return False
 
     def model_edited(self, item):
+        if self.loading_table:
+            return
+        if item.column() == 5:
+            name = self.model_table.item(item.row(), 0).text()
+            excluded = self.config.excluded_cap_models
+            if item.checkState() == Qt.CheckState.Checked:
+                if name not in excluded:
+                    excluded.append(name)
+            elif name in excluded:
+                excluded.remove(name)
+            self.fill_components()
+            self.clear_preview()
+            return
         self.update_cap_override(self.model_table, item, 3, self.config.model_overrides)
         if not self.loading_table:
             self.fill_components()
 
     def component_edited(self, item):
+        if self.loading_table:
+            return
+        if item.column() == 6:
+            refdes = self.component_table.item(item.row(), 0).text()
+            excluded = self.config.excluded_cap_components
+            if item.checkState() == Qt.CheckState.Checked:
+                if refdes not in excluded:
+                    excluded.append(refdes)
+            elif refdes in excluded:
+                excluded.remove(refdes)
+            self.clear_preview()
+            return
         if not self.update_cap_override(self.component_table, item, 5, self.config.component_overrides):
             return
         from ..core.capacitance import format_capacitance, resolved_capacitance
@@ -957,6 +998,9 @@ class MainWindow(QMainWindow):
                 self.config.channel_settings_source_path = ""
                 self.config.model_overrides.clear()
                 self.config.component_overrides.clear()
+                if before[0] != after[0]:
+                    self.config.excluded_cap_models.clear()
+                    self.config.excluded_cap_components.clear()
                 if any(before) and self.config.dcr:
                     self.config.dcr.clear()
                     self.log.appendPlainText("입력 파일이 바뀌어 이전 DCR 값을 비웠습니다. 새 입력에 맞는 DCR을 가져오세요.")

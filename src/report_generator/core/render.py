@@ -15,7 +15,7 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import FuncFormatter, NullFormatter
 
 from .models import ReportConfig, SpdData, TouchstoneData
-from .capacitance import format_capacitance, resolved_capacitance
+from .capacitance import cap_included, format_capacitance, resolved_capacitance
 from .mapping import group_title, plot_group
 from .touchstone import pi_display_units, plot_frequency_bounds, plot_impedance
 
@@ -117,7 +117,7 @@ def render_placement(spd: SpdData, config: ReportConfig, side: str,
     nets = mapped_nets(spd, config)
     components = placement_components(spd, config, side)
     def highlighted(c):
-        return c.is_cap and (not nets or bool(nets.intersection(c.nets)))
+        return cap_included(c, config) and (not nets or bool(nets.intersection(c.nets)))
     capacitances = {resolved_capacitance(c, spd, config) for c in components if highlighted(c)}
     known = sorted(v for v in capacitances if v is not None)
     palette = {value: next((color for nominal, color in CAP_COLORS.items() if np.isclose(value, nominal, rtol=1e-6, atol=0)),

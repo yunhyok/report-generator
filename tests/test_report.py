@@ -159,6 +159,61 @@ def test_empty_and_invalid_dcr_rejected(tmp_path):
         build_report(config, None, None, tmp_path / "invalid.xlsx")
 
 
+@pytest.mark.parametrize("scope", ["model", "component"])
+def test_false_positive_cap_exclusion_from_spd_to_excel(tmp_path, scope):
+    from report_generator.core.capacitance import summarize_caps
+    from report_generator.core.project import load_project, save_project
+    from report_generator.core.spd import read_spd
+
+    source = tmp_path / "socket.spd"
+    source.write_text(""".PartialCkt SOCKET_4P_LGA ExtNode = 1 2
+.EndPartialCkt
+.PartialCkt CAP_100N ExtNode = 1 2
+.EndPartialCkt
+.Connect LGA1 SOCKET_4P_LGA
+1 $Package.Node1::RAIL
+2 $Package.Node2::GND
+.EndC
+.Connect LGA2 SOCKET_4P_LGA
+1 $Package.Node3::RAIL
+2 $Package.Node4::GND
+.EndC
+.Connect C1 CAP_100N
+1 $Package.Node5::RAIL
+2 $Package.Node6::GND
+.EndC
+.Component LGA1 0mm 0mm
+.Component LGA2 10mm 0mm
+.Component C1 20mm 0mm
+""", encoding="utf-8")
+    spd = read_spd(source)
+    config = ReportConfig(mappings=[ChannelMapping(site="0", channel="RAIL", net="RAIL")])
+    assert [(row["label"], row["count"]) for row in summarize_caps(spd, config)] == [("4pF", 2), ("100nF", 1)]
+    if scope == "model":
+        config.excluded_cap_models = ["SOCKET_4P_LGA"]
+        config.component_overrides["LGA1"] = 1e-6  # Exclusion wins over a saved capacity correction.
+    else:
+        config.excluded_cap_components = ["LGA1"]
+    project = tmp_path / "socket.report.json"
+    save_project(project, config, {"spd": str(source)}, {"spd": spd.signature})
+    restored = load_project(project)[0]
+    result = build_report(restored, spd, None, tmp_path / "excluded.xlsx")
+    book = openpyxl.load_workbook(result.path)
+    try:
+        sheet = book["CAP_수량"]
+        assert sheet["C4"].value == ("100nF" if scope == "model" else "4pF")
+        assert sheet["C6"].value == 1
+        if scope == "model":
+            assert "4pF" not in [cell.value for row in sheet for cell in row]
+        else:
+            assert sheet["C8"].value == "100nF" and sheet["C10"].value == 1
+        assert len(book["CAP_배치도면"]._images) == 2
+    finally:
+        book.close()
+    restored.excluded_cap_models = ["SOCKET_4P_LGA", "CAP_100N"]
+    assert plan_pages(restored, spd, None)[0] == ["CAP_배치도면"]
+
+
 def test_general_component_geometry_without_mapping_is_valid_partial_report(tmp_path):
     spd = SpdData("synthetic.spd", {}, components=[
         Component("U1", "chip", x_mm=10, y_mm=20, width_mm=3, height_mm=4),

@@ -378,6 +378,35 @@ def test_alias_placement_selection_and_invalid_side(tmp_path):
         render.render_placement(spd, config, "Left", tmp_path / "no.png")
 
 
+@pytest.mark.parametrize("side", ["Top", "Bottom"])
+@pytest.mark.parametrize("scope", ["model", "component"])
+def test_excluded_cap_keeps_ordinary_geometry_without_cap_color_or_legend(tmp_path, monkeypatch, side, scope):
+    socket = Component("LGA1", "SOCKET_4P", ["RAIL", "GND"], side=side,
+                       x_mm=0, y_mm=0, width_mm=5, height_mm=5, is_cap=True)
+    spd = SpdData("synthetic", {}, models={"SOCKET_4P": SpiceModel("SOCKET_4P", 4e-12),
+                    "CAP": SpiceModel("CAP", 100e-9)}, components=[socket,
+        Component("C1", "CAP", ["RAIL", "GND"], side=side, status="Disabled",
+                  x_mm=6, y_mm=0, width_mm=1, height_mm=.5, is_cap=True)])
+    config = ReportConfig(mappings=[ChannelMapping(net="RAIL", channel="RAIL", site="0")])
+    if scope == "model":
+        config.excluded_cap_models = [socket.model_name]
+    else:
+        config.excluded_cap_components = [socket.refdes]
+    original = render.FigureCanvasAgg.print_png
+    def capture(canvas, filename, *args, **kwargs):
+        assert [text.get_text() for legend in canvas.figure.legends for text in legend.get_texts()] == ["100nF"]
+        return original(canvas, filename, *args, **kwargs)
+    monkeypatch.setattr(render.FigureCanvasAgg, "print_png", capture)
+    excluded = render.render_placement(spd, config, side, tmp_path / "excluded.png")
+    config.excluded_cap_models.clear()
+    config.excluded_cap_components.clear()
+    socket.is_cap = False
+    ordinary = render.render_placement(spd, config, side, tmp_path / "ordinary.png")
+    with Image.open(excluded) as actual, Image.open(ordinary) as expected:
+        assert actual.size == expected.size
+        assert actual.tobytes() == expected.tobytes()
+
+
 @pytest.mark.parametrize("side,mirror", [("Top", True), ("Bottom", True), ("Bottom", False)])
 @pytest.mark.parametrize("with_outline", [False, True])
 def test_empty_placement_face_has_honest_label_and_only_true_outline(

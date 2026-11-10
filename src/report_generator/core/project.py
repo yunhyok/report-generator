@@ -26,6 +26,9 @@ def validate_config(config: ReportConfig) -> None:
         for key, value in overrides.items():
             if not isinstance(key, str) or isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 raise ValueError("CAP 수정값은 0보다 큰 유한한 용량이어야 합니다.")
+    for excluded in (config.excluded_cap_models, config.excluded_cap_components):
+        if not isinstance(excluded, list) or any(not isinstance(name, str) or not name.strip() for name in excluded):
+            raise ValueError("CAP 제외 목록은 비어 있지 않은 모델명 또는 RefDes의 목록이어야 합니다.")
     seen = set()
     for row in config.dcr:
         if not row.site.strip() or not row.channel.strip():
@@ -71,6 +74,8 @@ def load_project(path: str | Path) -> tuple[ReportConfig, dict[str, str], dict, 
             mappings=[ChannelMapping(**v) for v in raw["mappings"]],
             model_overrides=raw.get("model_overrides", {}),
             component_overrides=raw.get("component_overrides", {}),
+            excluded_cap_models=raw.get("excluded_cap_models", []),
+            excluded_cap_components=raw.get("excluded_cap_components", []),
             dcr=[DcrRow(**v) for v in raw.get("dcr", [])],
             dcr_source_path=raw.get("dcr_source_path", ""),
             channel_settings_source_path=raw.get("channel_settings_source_path", ""),

@@ -181,6 +181,92 @@ def test_cap_model_table_shows_only_models_assigned_to_cap_components(window):
     assert window.config.model_overrides == {"DUT_OTHER": 2.2e-6}
 
 
+def test_cap_exclusion_model_dominates_and_preserves_component_choice(window):
+    window.spd = SpdData("synthetic.spd", {}, models={"CAP_4P": SpiceModel("CAP_4P", valid=True)}, components=[
+        Component("C1", "CAP_4P", is_cap=True), Component("C2", "CAP_4P", is_cap=True),
+    ])
+    window.config.excluded_cap_components = ["C2"]
+    window.fill_caps()
+    seed_preview(window)
+
+    model_exclusion = window.model_table.item(0, 5)
+    assert window.model_table.horizontalHeader().visualIndex(5) == 1
+    assert window.component_table.item(0, 6).checkState() == Qt.CheckState.Unchecked
+    model_exclusion.setCheckState(Qt.CheckState.Checked)
+    assert window.config.excluded_cap_models == ["CAP_4P"]
+    assert all(window.component_table.item(row, 6).checkState() == Qt.CheckState.Checked for row in range(2))
+    assert not window.component_table.item(0, 6).flags() & Qt.ItemFlag.ItemIsEnabled
+    assert_preview_empty(window)
+
+    model_exclusion = window.model_table.item(0, 5)
+    model_exclusion.setCheckState(Qt.CheckState.Unchecked)
+    assert [window.component_table.item(row, 6).checkState() for row in range(2)] == [Qt.CheckState.Unchecked, Qt.CheckState.Checked]
+    window.cap_filter.setText("C1")
+    assert window.component_table.rowCount() == 1
+    assert window.component_table.item(0, 0).text() == "C1"
+    assert window.component_table.horizontalHeader().visualIndex(6) == 1
+    assert window.component_table.item(0, 6).checkState() == Qt.CheckState.Unchecked
+    seed_preview(window)
+    window.component_table.item(0, 6).setCheckState(Qt.CheckState.Checked)
+    assert window.config.excluded_cap_components == ["C2", "C1"]
+    assert_preview_empty(window)
+    window.fill_caps()
+    assert window.model_table.horizontalHeader().visualIndex(5) == 1
+    assert window.component_table.horizontalHeader().visualIndex(6) == 1
+
+
+def test_cap_exclusion_clears_on_changed_input_but_project_reload_preserves(window):
+    window.config.excluded_cap_models = ["OLD"]
+    window.config.excluded_cap_components = ["C1"]
+    window.spd = SpdData("old.spd", {"size": 1, "mtime_ns": 1})
+    window.action = "load"
+    window.on_finished((SpdData("new.spd", {"size": 2, "mtime_ns": 2}), None, [], []))
+    assert not window.config.excluded_cap_models
+    assert not window.config.excluded_cap_components
+
+    restored = ReportConfig(excluded_cap_models=["RESTORED"], excluded_cap_components=["C9"])
+    window.pending_config = restored
+    window.action = "load"
+    window.on_finished((SpdData("another.spd", {"size": 3, "mtime_ns": 3}), None, [], []))
+    assert window.config.excluded_cap_models == ["RESTORED"]
+    assert window.config.excluded_cap_components == ["C9"]
+
+
+def test_touchstone_only_reload_preserves_cap_exclusions(window):
+    from types import SimpleNamespace
+    window.config.excluded_cap_models = ["KEEP"]
+    window.config.excluded_cap_components = ["C7"]
+    window.spd = SpdData("same.spd", {"size": 1, "mtime_ns": 1})
+    window.ts = SimpleNamespace(path="old.s2p", signature={"size": 1}, ports=[], warnings=[])
+    window.action = "load"
+    window.on_finished((window.spd, SimpleNamespace(path="new.s2p", signature={"size": 2}, ports=[], warnings=[]), [], []))
+    assert window.config.excluded_cap_models == ["KEEP"]
+    assert window.config.excluded_cap_components == ["C7"]
+
+
+def test_cap_exclusion_checkbox_is_clickable_in_small_window(window, app):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QScrollArea
+    window.spd = SpdData("synthetic", {}, components=[
+        Component("C1", "CAP_100N", is_cap=True), Component("LGA1", "SOCKET_4P", is_cap=True)])
+    window.fill_caps()
+    window.resize(720, 460)
+    window.tabs.setCurrentIndex(2)
+    window.cap_tabs.setCurrentIndex(1)
+    window.show()
+    app.processEvents()
+    scroll = next(area for area in window.findChildren(QScrollArea)
+                  if area.widget() and area.widget().isAncestorOf(window.component_table))
+    scroll.ensureWidgetVisible(window.component_table)
+    app.processEvents()
+    viewport = window.component_table.viewport()
+    rect = window.component_table.visualItemRect(window.component_table.item(1, 6))
+    assert viewport.visibleRegion().contains(rect.center())
+    QTest.mouseClick(viewport, Qt.MouseButton.LeftButton, pos=QPoint(rect.left() + 8, rect.center().y()))
+    assert window.config.excluded_cap_components == ["LGA1"]
+
+
 @pytest.mark.parametrize("text", ["-1", "inf", "1\n2"])
 def test_bad_dcr_replacement_preserves_prior_data(window, monkeypatch, text):
     window.config.mappings = [ChannelMapping(site="SITE2", channel="RAIL")]
