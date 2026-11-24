@@ -65,6 +65,20 @@ def _axes_font(ax) -> None:
     ax.yaxis.label.set_fontproperties(FontProperties(family="Malgun Gothic", size=14))
 
 
+def _curve_color(index: int, total: int) -> str:
+    if total <= len(COLORS):
+        return COLORS[index]
+    # Beyond the fixed palette, golden-ratio hue steps keep adjacent curves distinct.
+    r, g, b = hsv_to_rgb(index * .61803398875 % 1, .72, .60)
+    return f"#{round(r * 255):02x}{round(g * 255):02x}{round(b * 255):02x}"
+
+
+def group_plot_colors(config: ReportConfig, group: str) -> dict[int, str]:
+    mappings = [m for m in config.mappings if m.selected and m.confirmed and
+                plot_group(m) == group and m.port_index is not None]
+    return {m.port_index: _curve_color(index, len(mappings)) for index, m in enumerate(mappings)}
+
+
 def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
                       outputpath: str | Path, *, display_units: tuple[int, str] | None = None) -> str:
     """Render selected mapped ports from the same Z diagonal used by Excel."""
@@ -83,8 +97,7 @@ def render_group_plot(ts: TouchstoneData, config: ReportConfig, group: str,
         frequency, magnitude = plot_impedance(ts, m.port_index)
         if not np.isfinite(magnitude).any():
             continue
-        # Beyond the fixed palette, golden-ratio hue steps keep adjacent curves distinct.
-        color = COLORS[index] if len(mappings) <= len(COLORS) else hsv_to_rgb(index * .61803398875 % 1, .72, .60)
+        color = _curve_color(index, len(mappings))
         ax.plot(frequency / 1e6, magnitude * factor, color=color,
                 linestyle="solid", linewidth=config.settings.plot_line_width_pt)
         plotted += 1

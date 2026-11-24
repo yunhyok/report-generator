@@ -1191,3 +1191,20 @@ def test_impedance_line_width_control_invalidates_preview_and_roundtrips(window,
     window.open_project()
     assert window.plot_line_width.value() == 2.5
     assert window.collect_config().settings.plot_line_width_pt == 2.5
+
+
+def test_match_plot_channel_color_checkbox_roundtrips(window, monkeypatch, tmp_path):
+    assert not window.match_plot_channel_color.isChecked()
+    assert not window.collect_config().settings.match_plot_channel_color
+    window.match_plot_channel_color.setChecked(True)
+    assert window.collect_config().settings.match_plot_channel_color
+
+    path = tmp_path / "channel-color.report.json"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **kw: (str(path), ""))
+    assert window.save_project()
+    window.new_project()
+    assert not window.match_plot_channel_color.isChecked()
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **kw: (str(path), ""))
+    window.open_project()
+    assert window.match_plot_channel_color.isChecked()
+    assert window.collect_config().settings.match_plot_channel_color

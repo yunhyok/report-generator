@@ -536,3 +536,45 @@ def test_single_named_group_has_no_needless_leading_gap(tmp_path):
         assert book["VDD"]["Q5"].value == "VDD" and book["VDD"]["Q6"].value == "VDD"
     finally:
         book.close()
+
+
+def test_detail_channel_font_color_matches_plot_when_enabled(tmp_path):
+    from report_generator.core.render import COLORS
+
+    config, ts = data()
+    default_result = build_report(config, None, ts, tmp_path / "default.xlsx")
+    config.settings.match_plot_channel_color = True
+    colored_result = build_report(config, None, ts, tmp_path / "colored.xlsx")
+
+    default_book = openpyxl.load_workbook(default_result.path)
+    colored_book = openpyxl.load_workbook(colored_result.path)
+    try:
+        assert default_book["VDD"]["Q5"].font.color.type == "theme"
+        assert colored_book["VDD"]["Q5"].font.color.rgb == f"00{COLORS[0][1:].upper()}"
+        assert colored_book["VDD"]["Q6"].font.color.rgb == f"00{COLORS[1][1:].upper()}"
+        assert colored_book["PI ALL"]["C5"].font.color.type == "theme"
+        assert colored_book["PI ALL@100MHz"]["C5"].font.color.type == "theme"
+    finally:
+        default_book.close()
+        colored_book.close()
+
+
+def test_wide_detail_channel_font_color_only_applies_to_single_curve_header(tmp_path):
+    from report_generator.core.render import COLORS
+
+    config, spd, ts = priority_data(9)
+    config.settings.match_plot_channel_color = True
+    for mapping in config.mappings:
+        if mapping.channel == "FirstA" and mapping.site == "SITE1":
+            mapping.group = ""
+        elif mapping.channel == "FirstB":
+            mapping.group = ""
+    result = build_report(config, spd, ts, tmp_path / "wide-colored.xlsx")
+    book = openpyxl.load_workbook(result.path)
+    try:
+        # FirstA has only SITE1 on its own detail sheet, so its single header matches COLORS[0].
+        assert book["FirstA"]["P4"].font.color.rgb == f"00{COLORS[0][1:].upper()}"
+        # Multi-site channel on its own sheet has 9 distinct curve colors, so header keeps theme color.
+        assert book["FirstB"]["P4"].font.color.type == "theme"
+    finally:
+        book.close()

@@ -16,6 +16,8 @@ def validate_config(config: ReportConfig) -> None:
         raise ValueError("그래프 선 굵기는 1~5 pt 사이의 숫자로 입력하세요.")
     if not isinstance(config.settings.use_priority, bool):
         raise ValueError("채널 순위 사용 여부를 확인하세요.")
+    if not isinstance(config.settings.match_plot_channel_color, bool):
+        raise ValueError("개별 그래프 채널 글자색 일치 여부를 확인하세요.")
     if not isinstance(config.dcr_source_path, str):
         raise ValueError("DCR 원본 파일 경로가 올바르지 않습니다.")
     if not isinstance(config.channel_settings_source_path, str):

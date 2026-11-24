@@ -300,11 +300,16 @@ class MainWindow(QMainWindow):
         self.plot_line_width.setAccessibleName("그래프 선 굵기")
         self.plot_line_width.setToolTip("임피던스 데이터 그래프의 선 굵기")
         self.plot_line_width.valueChanged.connect(self.clear_preview)
+        self.match_plot_channel_color = QCheckBox("개별 그래프 선 색상에 맞춰 표의 채널 이름 글자색 적용")
+        self.match_plot_channel_color.setChecked(self.config.settings.match_plot_channel_color)
+        self.match_plot_channel_color.setAccessibleName("개별 그래프 채널 글자색 일치")
+        self.match_plot_channel_color.setToolTip("개별 plot 시트에서 그래프 곡선 색상과 동일하게 표의 채널 이름 글자색을 지정합니다.")
         self.mirror = QCheckBox("Bottom을 하면에서 본 방향으로 좌우 반전")
         self.mirror.setChecked(True)
         for label, widget in (
             ("제목", self.title_input), ("제품명", self.product_input),
             ("그래프 선 굵기", self.plot_line_width),
+            ("개별 그래프 색상", self.match_plot_channel_color),
             ("작성일", self.date_input), ("Revision", self.revision_input),
             ("접지 Net (쉼표 구분)", self.ground_input), ("Bottom 방향", self.mirror),
         ):
@@ -534,6 +539,7 @@ class MainWindow(QMainWindow):
             revision=self.revision_input.text().strip(), bottom_mirror=self.mirror.isChecked(),
             ground_nets=[n.strip() for n in self.ground_input.text().split(",") if n.strip()],
             use_priority=self.config.settings.use_priority, plot_line_width_pt=self.plot_line_width.value(),
+            match_plot_channel_color=self.match_plot_channel_color.isChecked(),
         )
         config.mappings = self.collect_mappings()
         if dcr is None:
@@ -1088,6 +1094,7 @@ class MainWindow(QMainWindow):
         self.revision_input.setText(settings.revision)
         self.ground_input.setText(", ".join(settings.ground_nets))
         self.plot_line_width.setValue(settings.plot_line_width_pt)
+        self.match_plot_channel_color.setChecked(settings.match_plot_channel_color)
         self.mirror.setChecked(settings.bottom_mirror)
         self.update_priority_status()
 

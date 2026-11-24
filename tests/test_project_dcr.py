@@ -3,7 +3,7 @@ import json
 import pytest
 
 from report_generator.core.dcr import assign_column, parse_column, parse_dcr_table, read_dcr_sheet, read_range
-from report_generator.core.models import ChannelMapping, DcrRow, ReportConfig, source_signature
+from report_generator.core.models import ChannelMapping, DcrRow, ReportConfig, ReportSettings, source_signature
 from report_generator.core.project import load_project, save_project
 
 
@@ -76,6 +76,23 @@ def test_project_rejects_invalid_plot_width(tmp_path, width):
     data["config"]["settings"]["plot_line_width_pt"] = width
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError, match="그래프 선 굵기"):
+        load_project(path)
+
+
+def test_project_roundtrips_and_validates_match_plot_channel_color(tmp_path):
+    path = tmp_path / "channel-color.report.json"
+    config = ReportConfig(settings=ReportSettings(match_plot_channel_color=True))
+    save_project(path, config, {})
+    assert load_project(path)[0].settings.match_plot_channel_color is True
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    del data["config"]["settings"]["match_plot_channel_color"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert load_project(path)[0].settings.match_plot_channel_color is False
+
+    data["config"]["settings"]["match_plot_channel_color"] = "yes"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="글자색"):
         load_project(path)
 
 

@@ -142,6 +142,7 @@ class ReportSettings:
     ground_nets: list[str] = field(default_factory=lambda: ["GND", "DGND"])
     use_priority: bool = False
     plot_line_width_pt: float = 1.0
+    match_plot_channel_color: bool = False
 
 
 @dataclass

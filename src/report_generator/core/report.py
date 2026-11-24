@@ -17,7 +17,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.views import Selection
 
 from .models import ReportConfig, ReportResult, SpdData, TouchstoneData, checkpoint
-from .render import PLACEMENT_SIDES, render_group_plot, render_placement
+from .render import PLACEMENT_SIDES, group_plot_colors, render_group_plot, render_placement
 from .capacitance import summarize_caps
 from .mapping import channel_sections as _sections, group_title, plot_group, priority_value
 from .dcr import dcr_channel_order
@@ -39,9 +39,9 @@ TITLES = {
 }
 
 
-def _font(size=11, bold=False):
+def _font(size=11, bold=False, color=None):
     return Font(name="맑은 고딕", charset=129, family=3, scheme="minor", size=size,
-                bold=bold, italic=False, color=Color(theme=1))
+                bold=bold, italic=False, color=color or Color(theme=1))
 
 
 def _site_value(site):
@@ -209,7 +209,7 @@ def plan_pages(config: ReportConfig, spd: SpdData | None = None,
     return [name for _, name, _ in pages], omitted
 
 
-def _put(ws, row, column, value, *, header=False, number_format=None, bold=None, size=11, fill=None):
+def _put(ws, row, column, value, *, header=False, number_format=None, bold=None, size=11, fill=None, font_color=None):
     cell = ws.cell(row, column)
     if isinstance(value, str):
         # Explicit string type prevents spreadsheet formulas from source names.
@@ -217,7 +217,7 @@ def _put(ws, row, column, value, *, header=False, number_format=None, bold=None,
         cell.data_type = "s"
     else:
         cell.value = value
-    cell.font = _font(size, header if bold is None else bold)
+    cell.font = _font(size, header if bold is None else bold, font_color)
     cell.fill = fill if fill is not None else HEADER if header else WHITE
     cell.alignment = Alignment(horizontal="center", vertical="center")
     cell.border = Border(left=LINE, right=LINE, top=LINE, bottom=LINE)
@@ -353,11 +353,12 @@ def _write_100(ws, spots, *, use_priority=False, channel_keys=None):
             _merged(ws, start_row, 2, row - 1, 2, label)
 
 
-def _merged(ws, row, column, end_row, end_column, value, *, header=False, fill=None, number_format=None):
+def _merged(ws, row, column, end_row, end_column, value, *, header=False, fill=None, number_format=None, font_color=None):
     for r in range(row, end_row + 1):
         for c in range(column, end_column + 1):
             _put(ws, r, c, value if (r, c) == (row, column) else None,
-                 header=header, fill=fill, number_format=number_format)
+                 header=header, fill=fill, number_format=number_format,
+                 font_color=font_color if (r, c) == (row, column) else None)
     if end_row > row or end_column > column:
         ws.merge_cells(start_row=row, start_column=column, end_row=end_row, end_column=end_column)
 
@@ -377,7 +378,7 @@ def _deviation(spots):
 
 
 def _write_pi(ws, spots, column=2, *, wide=False, detail=False, channel_order=(),
-              use_priority=False, channel_keys=None):
+              use_priority=False, channel_keys=None, channel_colors=None):
     channels = list(dict.fromkeys(m.channel for m, _, _ in spots))
     by_channel = {channel: [spot for spot in spots if spot[0].channel == channel] for channel in channels}
     priorities = _channel_priorities([m for m, _, _ in spots], use_priority)
@@ -408,7 +409,9 @@ def _write_pi(ws, spots, column=2, *, wide=False, detail=False, channel_order=()
                         rank = priorities.get(channel)
                         _put(ws, row, column, rank if isinstance(rank, int) else None, fill=fill)
                     display = mapping.display_name.strip() or channel
-                    cell = _put(ws, row, channel_column, display, fill=fill)
+                    color = channel_colors.get(mapping.port_index) if channel_colors else None
+                    cell = _put(ws, row, channel_column, display, fill=fill,
+                                font_color=color.lstrip("#").upper() if color else None)
                     _format_channel_label(cell, channel, display, channel_keys)
                     _put(ws, row, site_column, _site_value(mapping.site), fill=fill)
                     _pi_values(ws, row, site_column + 1, values, flags, factor, wide, fill)
@@ -444,8 +447,11 @@ def _write_pi(ws, spots, column=2, *, wide=False, detail=False, channel_order=()
                         _merged(ws, row, start + 3, row, start + block_width - 1,
                                 priorities[channel], header=True, fill=fill)
                     display = _channel_label(channel, [mapping for mapping, _, _ in entries])
+                    entry_colors = ({channel_colors[m.port_index] for m, _, _ in entries if m.port_index in channel_colors}
+                                    if channel_colors else set())
+                    font_color = next(iter(entry_colors)).lstrip("#").upper() if len(entry_colors) == 1 else None
                     _merged(ws, header_row, start, header_row, start + block_width - 1,
-                            f"{display} / [{unit}]", header=True, fill=fill)
+                            f"{display} / [{unit}]", header=True, fill=fill, font_color=font_color)
                     for index, heading in enumerate(["SITE", *FREQUENCY_LABELS] + ([] if detail else ["편차"])):
                         _put(ws, header_row + 1, start + index, heading, header=True, fill=fill)
                     widths = [9] * block_width if unit == "Ω" else (
@@ -604,7 +610,8 @@ def build_report(config: ReportConfig, spd: SpdData | None, ts: TouchstoneData |
                                    if plot_group(m) == group], column=16,
                               wide=len({mapping.site for mapping in _mappings(config, ts)}) > 8, detail=True,
                               channel_order=list(dict.fromkeys(mapping.channel for mapping in _mappings(config, ts))),
-                              use_priority=config.settings.use_priority, channel_keys=channel_keys)
+                              use_priority=config.settings.use_priority, channel_keys=channel_keys,
+                              channel_colors=group_plot_colors(config, group) if config.settings.match_plot_channel_color else None)
                 last_column = max(ws.max_column, 30 if kind == "placement" else 23 if kind == "group" else 2)
                 ws.print_area = f"A1:{get_column_letter(last_column)}{max(ws.max_row, image_bottom)}"
             checkpoint(cancel)
